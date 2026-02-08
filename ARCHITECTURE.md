@@ -541,7 +541,271 @@ Transparency on what's real and what's simulated:
 
 ---
 
-## 7. Deployment Options
+## 7. Tier 2 -- Metacognitive Engine
+
+The governance checks in Section 3 (entailment, entropy, preference, claims) form **Tier 1** -- fast, deterministic or semi-deterministic checks that catch obvious problems. Think of Tier 1 as the security camera.
+
+Tier 2 is the detective who reviews the footage.
+
+### Two-tier architecture
+
+| Tier | Role | Speed | What it catches |
+|------|------|-------|-----------------|
+| **Tier 1** | Deterministic checks | ~50-400ms | Wrong numbers, contradicted facts, hedged language, overt bias |
+| **Tier 2** | Metacognitive reasoning | ~500-1000ms | Plausible-but-wrong reasoning, subtle bias, domain-specific red flags |
+
+Tier 1 produces a **signal vector** -- four scores plus extracted claims. Tier 2 takes this signal vector as input, along with the original claim, source context, and domain, and evaluates whether the combination of signals indicates a real problem or a false alarm.
+
+```
+Tier 1: Parallel Verification
+  Entailment --> [score]
+  Entropy    --> [score]    --> Combined signal vector
+  Preference --> [score]
+  Claims     --> [score]
+                  |
+                  v
+Tier 2: Meta-Classifier (Fine-tuned LLM)
+  Input: claim + context + domain + Tier 1 signals
+  Output: risk_score, classification, reasoning, attention_cues
+                  |
+                  v
+Conformal Prediction Calibration
+  Converts risk_score into calibrated prediction sets
+  Guarantees: "90% of flagged items contain actual errors"
+  Mathematical coverage contracts, not heuristics
+                  |
+                  v
+  AUTO-APPROVE (target 95%)  |  HUMAN REVIEW (target 5%)
+```
+
+### Why a meta-classifier, not just weighted averages
+
+The current Tier 1 scoring uses static weights (entailment 40%, entropy 25%, preference 20%, claims 15%). This works for obvious cases but fails when:
+
+- Entailment scores high but the reasoning chain is flawed
+- Entropy is low (the model sounds confident) but the confidence is misplaced
+- A claim is technically accurate but misleading in context
+- Domain-specific patterns make a generic red flag actually benign
+
+The meta-classifier **learns** these patterns from labeled data. It sees thousands of examples where Tier 1 scored X but the actual verdict was Y, and learns the decision boundary that static weights cannot capture.
+
+### Conformal prediction calibration
+
+Traditional classifiers output a point estimate: "this is 82% likely to be correct." Conformal prediction converts this into a **prediction set** with mathematical coverage guarantees:
+
+- "With 90% confidence, this response is in the set {PASS}" -- auto-approve
+- "With 90% confidence, this response is in the set {PASS, FLAG}" -- human review needed
+- "With 90% confidence, this response is in the set {BLOCK}" -- auto-block
+
+The key property: **the 90% guarantee holds regardless of the underlying data distribution.** This is not a heuristic -- it is a mathematical contract. If Meerkat says "90% of flagged items contain actual errors," that statement is provably true over any future data.
+
+### Domain adaptation via LoRA
+
+The meta-classifier uses a single base model (**Llama 3 8B**) with domain-specific **LoRA adapters** (Low-Rank Adaptation). Each adapter is a small set of weights (~50MB) that specializes the base model for a specific domain without modifying the base weights.
+
+**Healthcare meta-classifier:**
+- Trained on: clinical notes, EHR data, medication interaction patterns
+- Learns: "Metformin in medication list + diabetes NOT in problem list = documentation gap, not hallucination"
+- Training data: clinical encounters + synthetic hallucination injection
+
+**Legal meta-classifier:**
+- Trained on: contract reviews, clause analysis, jurisdictional reasoning
+- Learns: "Non-compete flagged but standard in this jurisdiction = low risk" vs. "Non-compete contradicts governing law = high risk"
+
+**Financial meta-classifier:**
+- Trained on: investment analyses, risk assessments, regulatory filings
+- Learns: "Revenue projection differs from SEC filing = high risk" vs. "Rounding difference in quarterly summary = low risk"
+
+**Key insight:** Same base model. Same architecture. Different LoRA adapters per domain. Train once per domain, deploy everywhere in that domain. The adapters are the proprietary IP -- small enough to distribute, powerful enough to differentiate.
+
+---
+
+## 8. Federated Learning Network
+
+### The problem with static governance
+
+AI agents are getting smarter. GPT-5, Claude 4, and their successors will produce fewer obvious errors (wrong numbers, contradicted facts) and more subtle ones (plausible but flawed reasoning, technically correct but misleading conclusions). Static governance checks -- even good ones -- will fall behind.
+
+Any governance system that does not learn is a depreciating asset.
+
+### The solution: fleet-wide learning without data sharing
+
+Every Meerkat deployment generates governance signals: what was flagged, what humans overrode, what was missed, what new attack patterns appeared. Federated learning aggregates **patterns** (model weight updates) across the entire Meerkat fleet **without sharing raw data**.
+
+```
+  Hospital A        Law Firm B        Bank C
+  (Toronto)         (Vancouver)       (Calgary)
+      |                 |                |
+      v                 v                v
+  Local Meerkat     Local Meerkat    Local Meerkat
+  + Domain LoRA     + Domain LoRA    + Domain LoRA
+      |                 |                |
+      +--------+--------+--------+------+
+               |
+               v
+      Federated Aggregation Server
+      (weights only, never raw data)
+               |
+               v
+      Updated Global Model Weights
+               |
+      +--------+--------+--------+------+
+      |                 |                |
+      v                 v                v
+  Hospital A        Law Firm B        Bank C
+  (smarter)         (smarter)         (smarter)
+```
+
+How it works:
+
+1. A hospital in Toronto catches a new hallucination pattern in clinical notes
+2. The local Meerkat instance records the pattern as a training signal
+3. Federated learning encodes this pattern into **weight updates** (not raw data)
+4. Weight updates are aggregated on the central server with updates from all other deployments
+5. Updated global weights are pushed to every Meerkat instance
+6. The law firm in Vancouver now catches the same **class** of reasoning error -- even though the domain is different
+
+The fleet gets smarter together. Every new deployment makes every existing deployment more accurate.
+
+### Technical details
+
+| Parameter | Value |
+|-----------|-------|
+| **Aggregation method** | Federated Averaging (FedAvg) or FedProx for heterogeneous data distributions |
+| **Communication** | Encrypted weight deltas only -- raw data never leaves the client's network |
+| **Update cadence** | Daily signal collection, weekly model weight aggregation |
+| **Privacy** | Differential privacy applied to weight updates (epsilon-delta guarantees) |
+| **Rollback** | Model versioning with automated rollback if accuracy degrades post-update |
+| **Cross-domain learning** | Reasoning patterns transfer across domains -- "confident but wrong" patterns are universal |
+
+### Why this is the moat
+
+- **Network effect:** Every customer makes the product better for every other customer
+- **Data advantage:** Competitors would need equivalent fleet diversity to match accuracy
+- **Compounding:** The system improves weekly. A competitor starting today is not 6 months behind -- they are permanently behind a moving target
+- **Privacy-preserving:** Clients in regulated industries (healthcare, finance, legal) can participate without exposing sensitive data
+
+---
+
+## 9. Self-Governance
+
+Meerkat uses its own API to govern any internal AI agents. This serves three purposes:
+
+1. **Proof of trust** -- We use what we sell. If Meerkat governance is not good enough for our own AI operations, it is not good enough for customers.
+
+2. **Continuous testing** -- Production traffic validates the governance engine 24/7. Every internal AI call is a live test of the system under real conditions.
+
+3. **Transparency** -- Our own governance scores are visible. Customers can inspect how Meerkat governs itself.
+
+### Who watches the watchmen
+
+This is the first question any serious buyer asks. The answer is layered:
+
+| Layer | Defense | Why it works |
+|-------|---------|--------------|
+| **Tier 1 checks** | Deterministic measurement instruments, not generative AI | An entailment score is a calculation, not an opinion. It cannot hallucinate. |
+| **Tier 2 meta-classifier** | Validated against benchmark datasets with known ground truth | Sensitivity and specificity measured on held-out test sets. Published metrics. |
+| **Conformal prediction** | Mathematical coverage guarantees | The 90% coverage contract is provably correct -- it is a theorem, not a claim. |
+| **Human review layer** | Edge cases routed to domain experts | The 5% human review target ensures humans stay in the loop for ambiguous cases. |
+| **Published metrics** | Sensitivity, specificity, AUROC, calibration curves | Open measurement. If governance accuracy degrades, the numbers show it. |
+| **Fleet validation** | Federated network provides continuous cross-validation | Hundreds of deployments validating the same model weights across diverse domains. |
+
+The fundamental insight: governance infrastructure does not need to be perfect. It needs to be **measurably better than the alternative** (which today is nothing). And it needs to **prove** that it is better, with numbers, not claims.
+
+---
+
+## 10. Training Signal Collection
+
+The current demo API already collects the data needed for future federated learning. Every `/v1/verify` call generates a **training signal**:
+
+```json
+{
+  "input_hash": "sha256_a1b2c3...",
+  "domain": "legal",
+  "tier1_scores": {
+    "entailment": 0.92,
+    "entropy": 0.15,
+    "preference": 0.88,
+    "claims_verified": 6,
+    "claims_unverified": 1
+  },
+  "tier1_trust_score": 87,
+  "tier2_risk_score": null,
+  "human_override": null,
+  "final_verdict": "PASS",
+  "timestamp": "2026-02-07T14:30:00Z"
+}
+```
+
+| Field | Purpose |
+|-------|---------|
+| `input_hash` | Privacy-preserving identifier. SHA-256 hash, not raw text. Allows deduplication without exposing content. |
+| `tier1_scores` | The full Tier 1 signal vector. This becomes the feature set for Tier 2 training. |
+| `tier1_trust_score` | The current weighted-average score. Useful for measuring how Tier 2 improves over Tier 1 baselines. |
+| `tier2_risk_score` | Null until Tier 2 is deployed. Once active, captures the meta-classifier's output for further training. |
+| `human_override` | Filled when a human reviewer changes the automated verdict. These are the highest-value training examples -- they represent cases where the system was wrong. |
+| `final_verdict` | The verdict that was actually delivered (after any human override). Ground truth for training. |
+
+These signals accumulate. When Tier 2 is deployed, this historical data becomes the training set -- the system can be bootstrapped from real governance decisions, not synthetic data alone. When federated learning is deployed, these signals feed the aggregation pipeline.
+
+**Current storage:** In-memory dict (demo mode -- lost on restart).
+**Production storage:** PostgreSQL or DynamoDB with encryption at rest. Retention policy per org.
+
+---
+
+## 11. Roadmap
+
+```
+Phase 1  ========================  DONE
+Phase 2  ===.......................  IN PROGRESS
+Phase 3  ........................   Planned
+Phase 4  ........................   Planned
+```
+
+### Phase 1: Demo API (current)
+
+- Tier 1 governance checks (deterministic/simulated)
+- 5 REST endpoints: shield, verify, audit, configure, dashboard
+- MCP server for Anthropic Cowork plugin integration
+- Interactive frontend (login + governance dashboard)
+- Training signal collection begins (in-memory)
+
+**Status: Complete.**
+
+### Phase 2: Production Tier 1
+
+- Real DeBERTa entailment via ONNX-optimized inference
+- Real semantic entropy via multi-sample API calls + embedding clustering
+- Real claim extraction via NER-based models (T5-small fine-tuned)
+- Production database (PostgreSQL / DynamoDB) for audit trail and training signals
+- Azure App Service deployment with CI/CD
+- Authentication via Azure AD / JWT with RBAC
+
+**Status: In progress.**
+
+### Phase 3: Tier 2 Meta-Classifier
+
+- Fine-tune Llama 3 8B per domain (legal, financial, healthcare)
+- LoRA adapters as domain-specific IP
+- Conformal prediction calibration for coverage guarantees
+- Target: 95% auto-verification rate, 95% sensitivity on true positives
+- Human review workflow for the remaining 5%
+
+**Status: Planned. Dependent on Phase 2 training signal volume.**
+
+### Phase 4: Federated Learning Network
+
+- Fleet-wide weight aggregation (FedAvg / FedProx)
+- Cross-domain pattern transfer
+- Differential privacy for weight updates
+- Continuous model improvement cycle (weekly updates)
+- The moat: every new deployment makes every other deployment smarter
+
+**Status: Planned. Dependent on Phase 3 model deployment and multi-tenant fleet.**
+
+---
+
+## 12. Deployment Options
 
 ### Local — Docker Compose (demos & development)
 
@@ -615,7 +879,7 @@ For clients that require data sovereignty (healthcare networks, banks, governmen
 
 ---
 
-## 8. Security
+## 13. Security
 
 ### Authentication
 
@@ -671,5 +935,5 @@ Rate limiting is per API key, enforced at the ingress layer. Exceeded limits ret
 
 <p align="center">
   <strong>Meerkat Governance API</strong><br/>
-  <em>Architecture v1.0 — February 2026</em>
+  <em>Architecture v2.0 — February 2026</em>
 </p>

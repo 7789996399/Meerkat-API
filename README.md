@@ -247,18 +247,20 @@ Enterprise adds: on-premise deploy, custom domain configs, SOC 2 / HIPAA / FINRA
 ## Project Status
 
 ```
-Phase 1  ========================  DONE -- Demo API with governance engine
-Phase 2  ........................  Real DeBERTa entailment integration
-Phase 3  ========================  DONE -- MCP server for Cowork plugins
-Phase 4  ........................  Production deployment on AWS
+Phase 1  ========================  DONE -- Demo API + MCP server
+Phase 2  ===.......................  Production Tier 1 (real models)
+Phase 3  ........................   Tier 2 meta-classifier
+Phase 4  ........................   Federated learning network
 ```
 
 | Phase | Milestone | Status |
 |-------|-----------|--------|
-| **1** | Demo API with governance engine (4 checks, weighted scoring) | **Done** |
-| **2** | Real DeBERTa entailment + semantic entropy models | Planned |
-| **3** | MCP server for Anthropic Cowork plugins | **Done** |
-| **4** | Production deployment on AWS with full audit persistence | Planned |
+| **1** | Demo API with governance engine, MCP server, interactive frontend | **Done** |
+| **2** | Production Tier 1 -- real DeBERTa, semantic entropy, claim extraction, database | In progress |
+| **3** | Tier 2 meta-classifier -- fine-tuned Llama 3 8B with domain LoRA adapters | Planned |
+| **4** | Federated learning network -- fleet-wide model improvement | Planned |
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed roadmap and technical design.
 
 ---
 
