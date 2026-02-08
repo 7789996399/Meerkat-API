@@ -620,11 +620,110 @@ The meta-classifier uses a single base model (**Llama 3 8B**) with domain-specif
 
 ---
 
-## 8. Federated Learning Network
+## 8. Multi-Agent Team Governance
+
+2026 is the year of multi-agent systems. Gartner reports a 1,445% surge in multi-agent inquiries. By end of 2026, 40% of enterprise applications will embed task-specific AI agents. But trust in autonomous agents is **falling** -- executive confidence dropped from 43% in 2024 to 22% in 2025.
+
+The reason: single-agent governance is not enough.
+
+### The problem: errors compound across agent teams
+
+Single-agent governance (what exists today):
+
+```
+User --> Agent --> Verify output --> User
+
+Simple. One agent, one check.
+```
+
+Multi-agent team governance (what is actually needed):
+
+```
+User --> Orchestrator Agent
+              |
+         +---------+---------+
+         |         |         |
+      Agent A   Agent B   Agent C
+      (Research) (Analyze) (Draft)
+```
+
+Each agent can hallucinate. Each handoff between agents can corrupt information. The orchestrator can make bad coordination decisions. Verifying only the final output misses where errors actually originated.
+
+**Example:** Agent B hallucinates a contract clause analysis. Agent C "cleans it up" to look plausible. The final output reads correctly but is built on a rotten foundation. Single-agent governance on the final output would miss this entirely.
+
+### Meerkat's approach: governance at every layer
+
+```
+User --> Orchestrator Agent
+              |
+         +---------+---------+
+         |         |         |
+      Agent A   Agent B   Agent C
+         |         |         |
+      Meerkat   Meerkat   Meerkat   <-- verify EACH agent
+         |         |         |
+         +---------+---------+
+              |
+         Orchestrator assembles
+              |
+           Meerkat              <-- verify the assembly
+              |
+         User receives verified output
+```
+
+### Three levels of multi-agent governance
+
+**Level 1 -- Agent-Level Verification:**
+Each individual agent's output is verified independently. Uses the existing `/v1/verify` endpoint per agent. Catches hallucinations at the source before they propagate to downstream agents.
+
+**Level 2 -- Handoff Verification:**
+When Agent A passes context to Agent B, Meerkat verifies the handoff. Did Agent B receive what Agent A actually said? Did context get lost or distorted in translation? New endpoint concept: `POST /v1/verify-handoff`.
+
+**Level 3 -- Assembly Verification:**
+The orchestrator's final assembled output is verified against ALL individual agent outputs. Does the whole equal the sum of its parts? Did the orchestrator introduce errors during assembly? The Tier 2 metacognitive engine is essential here -- it understands reasoning chains across agents, not just individual outputs.
+
+### Protocol support
+
+| Protocol | Integration |
+|----------|------------|
+| **MCP (Anthropic)** | Meerkat already implements MCP. Each agent tool call can route through Meerkat verification. |
+| **A2A (Google Agent-to-Agent Protocol)** | Meerkat can sit on agent-to-agent communication channels, verifying messages between agents as they collaborate. |
+| **CrewAI** | Middleware hooks intercept agent communications within CrewAI workflows. |
+| **LangGraph** | Node-level verification at each step in the LangGraph execution graph. |
+| **AutoGen** | Message-level governance on the AutoGen conversation bus between agents. |
+
+### Multi-agent audit trail
+
+For a single agent, the audit trail is linear. For agent teams, the audit trail is a **graph**:
+
+```json
+{
+  "audit_id": "aud_team_001",
+  "agents": [
+    { "agent": "researcher", "audit": "aud_001", "score": 91 },
+    { "agent": "analyst",    "audit": "aud_002", "score": 73 },
+    { "agent": "drafter",    "audit": "aud_003", "score": 88 }
+  ],
+  "handoffs": [
+    { "from": "researcher", "to": "analyst", "verified": true },
+    { "from": "analyst",    "to": "drafter", "verified": true }
+  ],
+  "assembly": { "audit": "aud_004", "score": 82 },
+  "team_trust_score": 78,
+  "weakest_link": "analyst",
+  "recommendation": "Analyst output on clause 7.2 needs human review"
+}
+```
+
+This graph-based audit trail lets compliance officers see exactly **where** in the agent team a problem originated, not just that the final output had an issue. The `weakest_link` field immediately identifies the agent responsible, and the per-handoff verification shows whether the error was introduced or inherited.
+
+---
+
+## 9. Federated Learning Network
 
 ### The problem with static governance
 
-AI agents are getting smarter. GPT-5, Claude 4, and their successors will produce fewer obvious errors (wrong numbers, contradicted facts) and more subtle ones (plausible but flawed reasoning, technically correct but misleading conclusions). Static governance checks -- even good ones -- will fall behind.
+AI agents are getting smarter. GPT-5, Claude 5, and their successors will produce fewer obvious errors (wrong numbers, contradicted facts) and more subtle ones (plausible but flawed reasoning, technically correct but misleading conclusions). Static governance checks -- even good ones -- will fall behind.
 
 Any governance system that does not learn is a depreciating asset.
 
@@ -684,10 +783,11 @@ The fleet gets smarter together. Every new deployment makes every existing deplo
 - **Data advantage:** Competitors would need equivalent fleet diversity to match accuracy
 - **Compounding:** The system improves weekly. A competitor starting today is not 6 months behind -- they are permanently behind a moving target
 - **Privacy-preserving:** Clients in regulated industries (healthcare, finance, legal) can participate without exposing sensitive data
+- **Scale advantage:** The 1,000th client gets governance that is 1,000x more battle-tested than what the 1st client got. This network effect cannot be replicated without equivalent fleet scale.
 
 ---
 
-## 9. Self-Governance
+## 10. Self-Governance
 
 Meerkat uses its own API to govern any internal AI agents. This serves three purposes:
 
@@ -714,7 +814,7 @@ The fundamental insight: governance infrastructure does not need to be perfect. 
 
 ---
 
-## 10. Training Signal Collection
+## 11. Training Signal Collection
 
 The current demo API already collects the data needed for future federated learning. Every `/v1/verify` call generates a **training signal**:
 
@@ -733,6 +833,11 @@ The current demo API already collects the data needed for future federated learn
   "tier2_risk_score": null,
   "human_override": null,
   "final_verdict": "PASS",
+  "agent_team_context": {
+    "is_team": false,
+    "agent_role": null,
+    "handoff_from": null
+  },
   "timestamp": "2026-02-07T14:30:00Z"
 }
 ```
@@ -745,6 +850,7 @@ The current demo API already collects the data needed for future federated learn
 | `tier2_risk_score` | Null until Tier 2 is deployed. Once active, captures the meta-classifier's output for further training. |
 | `human_override` | Filled when a human reviewer changes the automated verdict. These are the highest-value training examples -- they represent cases where the system was wrong. |
 | `final_verdict` | The verdict that was actually delivered (after any human override). Ground truth for training. |
+| `agent_team_context` | Multi-agent metadata. Tracks whether the verification was part of a team workflow, which agent role produced it, and which agent handed off context. Null fields for single-agent calls. |
 
 These signals accumulate. When Tier 2 is deployed, this historical data becomes the training set -- the system can be bootstrapped from real governance decisions, not synthetic data alone. When federated learning is deployed, these signals feed the aggregation pipeline.
 
@@ -753,13 +859,14 @@ These signals accumulate. When Tier 2 is deployed, this historical data becomes 
 
 ---
 
-## 11. Roadmap
+## 12. Roadmap
 
 ```
 Phase 1  ========================  DONE
 Phase 2  ===.......................  IN PROGRESS
 Phase 3  ........................   Planned
 Phase 4  ........................   Planned
+Phase 5  ........................   Planned
 ```
 
 ### Phase 1: Demo API (current)
@@ -769,6 +876,7 @@ Phase 4  ........................   Planned
 - MCP server for Anthropic Cowork plugin integration
 - Interactive frontend (login + governance dashboard)
 - Training signal collection begins (in-memory)
+- Single-agent verification
 
 **Status: Complete.**
 
@@ -793,7 +901,17 @@ Phase 4  ........................   Planned
 
 **Status: Planned. Dependent on Phase 2 training signal volume.**
 
-### Phase 4: Federated Learning Network
+### Phase 4: Multi-Agent Team Governance
+
+- Agent-level, handoff-level, and assembly-level verification
+- Graph-based audit trails with weakest-link identification
+- A2A protocol support alongside MCP
+- CrewAI, LangGraph, and AutoGen framework integration
+- `POST /v1/verify-handoff` endpoint for inter-agent context verification
+
+**Status: Planned. Dependent on Phase 2 production infrastructure.**
+
+### Phase 5: Federated Learning Network
 
 - Fleet-wide weight aggregation (FedAvg / FedProx)
 - Cross-domain pattern transfer
@@ -805,7 +923,7 @@ Phase 4  ........................   Planned
 
 ---
 
-## 12. Deployment Options
+## 13. Deployment Options
 
 ### Local — Docker Compose (demos & development)
 
@@ -879,7 +997,7 @@ For clients that require data sovereignty (healthcare networks, banks, governmen
 
 ---
 
-## 13. Security
+## 14. Security
 
 ### Authentication
 

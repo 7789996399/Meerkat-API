@@ -14,12 +14,11 @@
 </p>
 
 <p align="center">
-  As AI agents take over business logic -- reviewing contracts, analyzing<br/>
-  financials, writing clinical notes -- the question is not whether to use them.<br/>
-  It is who watches the agents.<br/><br/>
-  Meerkat is the trust infrastructure that sits between AI agents and the<br/>
-  systems they operate on. Every request scanned. Every response verified.<br/>
-  Every decision audited.
+  As single AI agents evolve into coordinated agent teams -- reviewing contracts,<br/>
+  analyzing portfolios, writing clinical notes in parallel -- governance becomes<br/>
+  exponentially harder. One hallucination propagates across the entire team.<br/><br/>
+  Meerkat verifies every agent, every handoff, every assembly.<br/>
+  Every request scanned. Every response verified. Every decision audited.
 </p>
 
 ---
@@ -186,6 +185,36 @@ Every AI agent response is evaluated across four dimensions:
 
 ---
 
+## Multi-Agent Governance
+
+Single agents are table stakes. The real challenge is **agent teams** -- multiple AI agents collaborating on a task, passing context between each other, with an orchestrator assembling the final output.
+
+| Level | What Meerkat Verifies |
+|-------|----------------------|
+| **Agent-level** | Each individual agent's output, independently. Catches hallucinations at the source. |
+| **Handoff-level** | Context passed between agents. Did information get lost or distorted in translation? |
+| **Assembly-level** | The orchestrator's final output against all individual agent outputs. Does the whole equal the sum of its parts? |
+
+The audit trail for agent teams is a **graph**, not a line. Compliance officers can see exactly **where** in the team a problem originated, which agent was the weakest link, and whether errors were introduced or inherited.
+
+**Protocol support:** MCP (Anthropic), A2A (Google Agent-to-Agent Protocol), CrewAI, LangGraph, AutoGen.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for full multi-agent architecture and audit trail schema.
+
+---
+
+## Why Meerkat Gets Smarter
+
+Static governance checks are a depreciating asset -- AI models improve, hallucinations get subtler, and fixed rules fall behind. Meerkat is designed to learn.
+
+- **Tier 2 metacognitive engine** -- A fine-tuned LLM that evaluates AI reasoning patterns, not just outputs. Takes Tier 1 signals as input and learns which combinations indicate real problems vs. false alarms. Domain-specific LoRA adapters (healthcare, legal, financial) are the proprietary IP.
+- **Federated learning across the fleet** -- Every Meerkat deployment generates governance signals. Patterns (model weights, never raw data) are aggregated across the entire fleet. A hospital in Toronto catches a new hallucination pattern; the law firm in Vancouver catches the same class of error by next week.
+- **The moat** -- Every new deployment makes every other deployment smarter. The 1,000th client gets governance that is 1,000x more battle-tested than what the 1st client got. This network effect cannot be replicated without equivalent fleet scale.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details on the metacognitive engine, federated learning, and conformal prediction calibration.
+
+---
+
 ## Quick Start
 
 #### Install
@@ -250,7 +279,8 @@ Enterprise adds: on-premise deploy, custom domain configs, SOC 2 / HIPAA / FINRA
 Phase 1  ========================  DONE -- Demo API + MCP server
 Phase 2  ===.......................  Production Tier 1 (real models)
 Phase 3  ........................   Tier 2 meta-classifier
-Phase 4  ........................   Federated learning network
+Phase 4  ........................   Multi-agent team governance
+Phase 5  ........................   Federated learning network
 ```
 
 | Phase | Milestone | Status |
@@ -258,7 +288,8 @@ Phase 4  ........................   Federated learning network
 | **1** | Demo API with governance engine, MCP server, interactive frontend | **Done** |
 | **2** | Production Tier 1 -- real DeBERTa, semantic entropy, claim extraction, database | In progress |
 | **3** | Tier 2 meta-classifier -- fine-tuned Llama 3 8B with domain LoRA adapters | Planned |
-| **4** | Federated learning network -- fleet-wide model improvement | Planned |
+| **4** | Multi-agent team governance -- agent-level, handoff-level, assembly-level verification | Planned |
+| **5** | Federated learning network -- fleet-wide model improvement | Planned |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed roadmap and technical design.
 
