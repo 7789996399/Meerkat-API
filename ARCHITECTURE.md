@@ -303,10 +303,10 @@ Extracted Claims:
   ┌────┬──────────────────────────────────────┬──────────────┐
   │ #  │ Claim                                │ Status       │
   ├────┼──────────────────────────────────────┼──────────────┤
-  │ 1  │ NDA includes a non-compete clause    │ ✅ Verified   │
-  │ 2  │ Non-compete duration is 2 years      │ ✅ Verified   │
-  │ 3  │ Coverage is all of North America     │ ❌ Contradicted│
-  │ 4  │ Penalty for breach is $50,000        │ ⚠️ Unverified │
+  │ 1  │ NDA includes a non-compete clause    │ VERIFIED      │
+  │ 2  │ Non-compete duration is 2 years      │ VERIFIED      │
+  │ 3  │ Coverage is all of North America     │ CONTRADICTED  │
+  │ 4  │ Penalty for breach is $50,000        │ UNVERIFIED    │
   └────┴──────────────────────────────────────┴──────────────┘
 
   Source says: "...non-compete limited to British Columbia..."

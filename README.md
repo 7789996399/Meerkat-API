@@ -22,7 +22,7 @@
 
 ---
 
-## 🚨 The Problem
+## The Problem
 
 Anthropic just launched legal, financial, and healthcare plugins for Cowork — with **160K+ installs for legal alone**. These AI agents are already reviewing contracts, analyzing financials, and writing clinical notes in production.
 
@@ -40,7 +40,7 @@ Every prompt. Every response. Every claim. Scored, logged, and auditable.
 
 ---
 
-## 🔁 How It Works
+## How It Works
 
 ```
 ┌──────────┐     ┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐     ┌──────────┐
@@ -52,7 +52,7 @@ Every prompt. Every response. Every claim. Scored, logged, and auditable.
                         │                                            │
                         ▼                                            ▼
                  Prompt injection?                          Governance Score
-                 Jailbreak attempt?                         ├─ Entailment ✓/✗
+                 Jailbreak attempt?                         ├─ Entailment pass/fail
                  Policy violation?                          ├─ Confidence level
                                                             ├─ Bias detected?
                                                             ├─ Claims verified?
@@ -66,7 +66,7 @@ Every prompt. Every response. Every claim. Scored, logged, and auditable.
 
 ---
 
-## 🖥 Live Demo
+## Live Demo
 
 **Meerkat ships with a fully interactive frontend — login page + governance dashboard.**
 
@@ -104,7 +104,7 @@ The **dashboard** (`frontend/dashboard/`) is an interactive React app that serve
 
 ---
 
-## 📡 Core API Endpoints
+## Core API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -116,7 +116,7 @@ The **dashboard** (`frontend/dashboard/`) is an interactive React app that serve
 
 ---
 
-## 🔌 Integration Paths
+## Integration Paths
 
 #### MCP Server — 1 config line for any Anthropic Cowork plugin
 ```json
@@ -151,7 +151,7 @@ governance_level: strict
 
 ---
 
-## 🧠 Governance Checks
+## Governance Checks
 
 What makes Meerkat unique — every AI response is evaluated across four dimensions:
 
@@ -164,7 +164,7 @@ What makes Meerkat unique — every AI response is evaluated across four dimensi
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 #### Install
 ```bash
@@ -192,7 +192,7 @@ print(result["flags"])              # ["entailment_contradiction", "claim_mismat
 
 ---
 
-## 🛠 Tech Stack
+## Tech Stack
 
 | Component | Technology |
 |-----------|-----------|
@@ -205,7 +205,7 @@ print(result["flags"])              # ["entailment_contradiction", "claim_mismat
 
 ---
 
-## 📋 Project Status: Alpha — Demo Available
+## Project Status: Alpha — Demo Available
 
 ```
 Phase 1  ███████████████████░░░░░░  NOW — Demo API with simulated governance
