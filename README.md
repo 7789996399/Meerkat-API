@@ -116,15 +116,35 @@ The **dashboard** (`frontend/dashboard/`) is an interactive React app that serve
 
 ---
 
-## Integration Paths
+## MCP Integration
 
-#### MCP Server — 1 config line for any Anthropic Cowork plugin
+Connect Meerkat to any Anthropic Cowork plugin with one config block:
+
 ```json
 {
-  "mcpServers": {
-    "meerkat": { "url": "https://your-instance.meerkat.ai/mcp" }
+  "mcp_servers": {
+    "meerkat-governance": {
+      "command": "python",
+      "args": ["path/to/meerkat_mcp_server.py"],
+      "env": {
+        "MEERKAT_API_URL": "http://localhost:8000",
+        "MEERKAT_API_KEY": "mk_demo_test123"
+      }
+    }
   }
 }
+```
+
+This gives Claude access to four governance tools: `meerkat_shield` (pre-flight input scan), `meerkat_verify` (post-flight output verification), `meerkat_audit` (compliance trail), and `meerkat_configure` (org rules). See [mcp/README.md](mcp/README.md) for full setup instructions and examples.
+
+---
+
+## Integration Paths
+
+#### MCP Server -- Cowork plugin integration (see above)
+```bash
+# Add the config block above, then use your plugin as normal.
+# Claude automatically shields input and verifies output.
 ```
 
 #### API Proxy — Change 1 URL to route through Meerkat
@@ -208,17 +228,17 @@ print(result["flags"])              # ["entailment_contradiction", "claim_mismat
 ## Project Status: Alpha — Demo Available
 
 ```
-Phase 1  ███████████████████░░░░░░  NOW — Demo API with simulated governance
+Phase 1  ████████████████████████  DONE -- Demo API with simulated governance
 Phase 2  ░░░░░░░░░░░░░░░░░░░░░░░░  Real DeBERTa entailment integration
-Phase 3  ░░░░░░░░░░░░░░░░░░░░░░░░  MCP server for Anthropic plugins
+Phase 3  ████████████████████████  DONE -- MCP server for Anthropic plugins
 Phase 4  ░░░░░░░░░░░░░░░░░░░░░░░░  Production deployment on AWS
 ```
 
 | Phase | Milestone | Status |
 |-------|-----------|--------|
-| **1** | Demo API with simulated governance scores | **In Progress** |
+| **1** | Demo API with simulated governance scores | **Done** |
 | **2** | Real DeBERTa entailment + semantic entropy | Planned |
-| **3** | MCP server for Anthropic Cowork plugins | Planned |
+| **3** | MCP server for Anthropic Cowork plugins | **Done** |
 | **4** | Production deployment on AWS with full audit | Planned |
 
 ---
