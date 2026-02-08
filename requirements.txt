@@ -10,3 +10,6 @@ pydantic==2.10.4
 
 # Environment variable management
 python-dotenv==1.0.1
+
+# HTTP client (used by demo scripts)
+requests==2.32.3

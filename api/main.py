@@ -4,17 +4,22 @@ Meerkat Governance API -- Application entry point.
 Run with:
     uvicorn api.main:app --reload
 
-Then open http://localhost:8000/docs for the interactive Swagger UI.
+Then open http://localhost:8000 for the login page,
+or http://localhost:8000/docs for the interactive Swagger UI.
 
 This file:
   1. Creates the FastAPI application
   2. Adds CORS middleware (permissive for demo, locked down in production)
   3. Mounts all route modules (verify, shield, audit, configure, dashboard)
-  4. Defines the root welcome endpoint and health check
+  4. Serves the frontend (login page, dashboard app)
+  5. Defines the health check endpoint
 """
+
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse
 
 from api.routes import audit, configure, dashboard, shield, verify
 
@@ -79,26 +84,36 @@ app.include_router(dashboard.router)
 
 
 # ---------------------------------------------------------------------------
-# Root and health endpoints
+# Frontend routes
+#
+# Resolve the frontend directory relative to this file so it works both
+# when running locally (uvicorn api.main:app) and inside Docker.
 # ---------------------------------------------------------------------------
 
-@app.get(
-    "/",
-    summary="Welcome",
-    description="Root endpoint with links to documentation and health check.",
-    tags=["System"],
-)
-async def root():
-    """Welcome message with links to the key resources."""
-    return {
-        "name": "Meerkat Governance API",
-        "version": "0.1.0-alpha",
-        "status": "running",
-        "docs": "/docs",
-        "health": "/v1/health",
-        "message": "AI Governance as a Service. Visit /docs for the interactive API explorer.",
-    }
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
+
+@app.get("/", include_in_schema=False)
+async def root():
+    """Redirect root to the login page."""
+    return RedirectResponse(url="/login")
+
+
+@app.get("/login", include_in_schema=False)
+async def login_page():
+    """Serve the MEERKAT login page."""
+    return FileResponse(FRONTEND_DIR / "login.html")
+
+
+@app.get("/app", include_in_schema=False)
+async def dashboard_page():
+    """Serve the governance dashboard (React app)."""
+    return FileResponse(FRONTEND_DIR / "dashboard.html")
+
+
+# ---------------------------------------------------------------------------
+# Health check
+# ---------------------------------------------------------------------------
 
 @app.get(
     "/v1/health",
