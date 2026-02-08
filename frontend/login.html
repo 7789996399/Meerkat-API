@@ -14,7 +14,6 @@
     :root {
       --teal-500: #0891b2;
       --teal-600: #0e7490;
-      --amber-500: #f59e0b;
       --slate-100: #f1f5f9;
       --slate-400: #94a3b8;
       --slate-500: #64748b;
@@ -113,32 +112,6 @@
       animation: fadeInUp 0.7s ease-out 0.15s both;
     }
 
-    /* Demo notice */
-    .demo-notice {
-      background: rgba(245, 158, 11, 0.1);
-      border: 1px solid rgba(245, 158, 11, 0.25);
-      border-radius: 8px;
-      padding: 12px 24px;
-      margin-bottom: 8px;
-    }
-
-    .demo-badge {
-      display: inline-block;
-      background: var(--amber-500);
-      color: var(--slate-900);
-      padding: 3px 10px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-    }
-
-    .demo-text {
-      color: var(--slate-400);
-      font-size: 12px;
-      margin-top: 8px;
-    }
-
     /* Sign in button */
     .signin-btn {
       display: flex;
@@ -225,22 +198,6 @@
       animation: fadeInUp 0.7s ease-out 0.3s both;
     }
 
-    .privacy-note {
-      color: var(--slate-500);
-      font-size: 12px;
-      margin-bottom: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-    }
-
-    .privacy-note svg {
-      width: 14px;
-      height: 14px;
-      fill: var(--slate-500);
-    }
-
     .footer-text {
       color: var(--slate-500);
       font-size: 12px;
@@ -282,11 +239,6 @@
     <!-- Sign In -->
     <div class="signin-section">
       
-      <div class="demo-notice" id="demoNotice" style="display: none;">
-        <span class="demo-badge">DEMO MODE</span>
-        <p class="demo-text">Azure AD not configured</p>
-      </div>
-      
       <button class="signin-btn" id="signinBtn" onclick="handleSignIn()">
         <div class="ms-icon">
           <span class="ms-red"></span>
@@ -307,21 +259,12 @@
   
   <!-- Footer -->
   <footer class="footer">
-    <p class="privacy-note">
-      <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
-      Protected under PIPEDA
-    </p>
     <p class="footer-text">© 2026 Monitored by Meerkat</p>
   </footer>
 
   <script>
     let isSigningIn = false;
-    const isAzureConfigured = false;
-    
-    if (!isAzureConfigured) {
-      document.getElementById('demoNotice').style.display = 'block';
-    }
-    
+
     function handleSignIn() {
       if (isSigningIn) return;
       
