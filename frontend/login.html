@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MEERKAT | AI Governance</title>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --teal-500: #0891b2;
+      --teal-600: #0e7490;
+      --amber-500: #f59e0b;
+      --slate-100: #f1f5f9;
+      --slate-400: #94a3b8;
+      --slate-500: #64748b;
+      --slate-800: #1e293b;
+      --slate-900: #0f172a;
+      --error: #ef4444;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: linear-gradient(145deg, #0a0f1a 0%, var(--slate-900) 50%, #0a0f1a 100%);
+      color: var(--slate-100);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Subtle background glow */
+    body::before {
+      content: '';
+      position: absolute;
+      top: 30%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 600px;
+      height: 400px;
+      background: radial-gradient(ellipse, rgba(8, 145, 178, 0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* Animations */
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(24px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes shimmer {
+      0% { background-position: -200% center; }
+      100% { background-position: 200% center; }
+    }
+
+    /* Main container */
+    .login-container {
+      text-align: center;
+      padding: 40px 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Logo */
+    .logo-section {
+      margin-bottom: 56px;
+      animation: fadeInUp 0.7s ease-out;
+    }
+
+    .logo {
+      width: 320px;
+      height: auto;
+      margin-bottom: 20px;
+    }
+
+    .tagline {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--slate-400);
+      letter-spacing: 4px;
+      text-transform: uppercase;
+    }
+
+    /* Sign in section */
+    .signin-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      animation: fadeInUp 0.7s ease-out 0.15s both;
+    }
+
+    /* Demo notice */
+    .demo-notice {
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      border-radius: 8px;
+      padding: 12px 24px;
+      margin-bottom: 8px;
+    }
+
+    .demo-badge {
+      display: inline-block;
+      background: var(--amber-500);
+      color: var(--slate-900);
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .demo-text {
+      color: var(--slate-400);
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    /* Sign in button */
+    .signin-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: #ffffff;
+      color: var(--slate-800);
+      border: none;
+      border-radius: 8px;
+      padding: 16px 40px;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: 'Outfit', sans-serif;
+      cursor: pointer;
+      min-width: 300px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .signin-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    }
+
+    .signin-btn:active {
+      transform: translateY(0);
+    }
+
+    .signin-btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .signin-btn:disabled::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+    }
+
+    /* Microsoft icon */
+    .ms-icon {
+      display: grid;
+      grid-template-columns: 9px 9px;
+      gap: 2px;
+    }
+
+    .ms-icon span {
+      width: 9px;
+      height: 9px;
+    }
+
+    .ms-red { background: #f25022; }
+    .ms-green { background: #7fba00; }
+    .ms-blue { background: #00a4ef; }
+    .ms-yellow { background: #ffb900; }
+
+    /* Error message */
+    .error-msg {
+      color: var(--error);
+      font-size: 14px;
+      display: none;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .error-msg.visible {
+      display: flex;
+    }
+
+    /* Footer */
+    .footer {
+      position: absolute;
+      bottom: 28px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      animation: fadeInUp 0.7s ease-out 0.3s both;
+    }
+
+    .privacy-note {
+      color: var(--slate-500);
+      font-size: 12px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .privacy-note svg {
+      width: 14px;
+      height: 14px;
+      fill: var(--slate-500);
+    }
+
+    .footer-text {
+      color: var(--slate-500);
+      font-size: 12px;
+    }
+
+    /* Responsive */
+    @media (max-width: 400px) {
+      .logo {
+        width: 260px;
+      }
+      .signin-btn {
+        min-width: 260px;
+        padding: 14px 28px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <main class="login-container">
+    
+    <!-- Logo -->
+    <div class="logo-section">
+      <!-- MEERKAT Logo (white version) -->
+      <svg class="logo" viewBox="0 0 1444 227" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g fill="#FFFFFF" fill-rule="evenodd">
+          <path d="M 1 5 L 0 222 L 4 226 L 69 226 L 72 223 L 73 130 L 94 168 L 102 174 L 130 174 L 138 166 L 156 133 L 158 132 L 159 223 L 162 226 L 228 226 L 231 224 L 232 6 L 228 1 L 167 0 L 162 3 L 118 86 L 109 73 L 71 3 L 65 0 L 5 1 Z"/>
+          <path d="M 257 1 L 253 5 L 253 223 L 256 226 L 425 225 L 428 221 L 428 168 L 424 163 L 326 161 L 327 143 L 414 143 L 420 138 L 421 90 L 418 85 L 415 83 L 405 82 L 327 83 L 326 66 L 350 64 L 419 65 L 424 63 L 427 58 L 427 7 L 424 2 L 418 0 Z"/>
+          <path d="M 451 1 L 446 7 L 447 224 L 450 226 L 618 225 L 620 221 L 620 167 L 615 162 L 518 161 L 519 143 L 606 143 L 612 139 L 613 92 L 612 88 L 608 84 L 519 83 L 518 66 L 538 64 L 615 64 L 619 60 L 619 6 L 617 2 L 613 0 Z"/>
+          <path d="M 642 2 L 639 6 L 640 224 L 642 226 L 713 225 L 715 222 L 715 157 L 717 155 L 727 155 L 732 163 L 752 212 L 761 226 L 834 226 L 838 220 L 837 213 L 799 145 L 818 128 L 827 113 L 832 96 L 832 66 L 830 56 L 819 33 L 805 19 L 796 13 L 783 7 L 761 1 L 690 0 Z"/>
+          <path d="M 716 64 L 718 62 L 745 64 L 753 73 L 752 88 L 741 96 L 717 96 L 715 94 Z"/>
+          <path d="M 849 4 L 849 132 L 847 141 L 847 159 L 849 165 L 848 219 L 852 226 L 923 225 L 926 221 L 927 151 L 951 198 L 959 219 L 965 226 L 1123 226 L 1128 224 L 1134 215 L 1139 199 L 1142 177 L 1143 148 L 1138 125 L 1126 103 L 1124 88 L 1125 80 L 1128 74 L 1135 67 L 1145 63 L 1159 63 L 1171 68 L 1192 86 L 1194 94 L 1190 98 L 1175 99 L 1164 105 L 1161 109 L 1161 118 L 1175 138 L 1181 150 L 1195 187 L 1195 210 L 1193 210 L 1187 202 L 1187 188 L 1185 186 L 1180 186 L 1176 190 L 1177 210 L 1181 222 L 1186 226 L 1272 226 L 1274 224 L 1275 217 L 1252 160 L 1211 40 L 1203 11 L 1200 5 L 1195 1 L 1121 0 L 1113 3 L 1093 59 L 1057 173 L 1045 203 L 1042 201 L 994 112 L 993 106 L 1048 9 L 1048 5 L 1041 0 L 966 1 L 957 12 L 950 28 L 940 44 L 928 69 L 926 70 L 925 5 L 921 1 L 856 0 Z"/>
+          <path d="M 1249 1 L 1244 7 L 1245 67 L 1250 71 L 1303 72 L 1305 74 L 1306 223 L 1310 226 L 1379 226 L 1383 221 L 1382 75 L 1387 71 L 1439 71 L 1443 67 L 1442 3 L 1437 0 Z"/>
+        </g>
+      </svg>
+      <p class="tagline">AI Governance</p>
+    </div>
+    
+    <!-- Sign In -->
+    <div class="signin-section">
+      
+      <div class="demo-notice" id="demoNotice" style="display: none;">
+        <span class="demo-badge">DEMO MODE</span>
+        <p class="demo-text">Azure AD not configured</p>
+      </div>
+      
+      <button class="signin-btn" id="signinBtn" onclick="handleSignIn()">
+        <div class="ms-icon">
+          <span class="ms-red"></span>
+          <span class="ms-green"></span>
+          <span class="ms-blue"></span>
+          <span class="ms-yellow"></span>
+        </div>
+        <span id="btnText">Sign in with Microsoft</span>
+      </button>
+      
+      <p class="error-msg" id="errorMsg">
+        <span>⚠️</span>
+        <span id="errorText"></span>
+      </p>
+      
+    </div>
+  </main>
+  
+  <!-- Footer -->
+  <footer class="footer">
+    <p class="privacy-note">
+      <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+      Protected under PIPEDA
+    </p>
+    <p class="footer-text">© 2025 MEERKAT • Providence Health Care</p>
+  </footer>
+
+  <script>
+    let isSigningIn = false;
+    const isAzureConfigured = false;
+    
+    if (!isAzureConfigured) {
+      document.getElementById('demoNotice').style.display = 'block';
+    }
+    
+    function handleSignIn() {
+      if (isSigningIn) return;
+      
+      isSigningIn = true;
+      const btn = document.getElementById('signinBtn');
+      const btnText = document.getElementById('btnText');
+      const errorMsg = document.getElementById('errorMsg');
+      
+      errorMsg.classList.remove('visible');
+      btn.disabled = true;
+      btnText.textContent = 'Signing in...';
+      
+      setTimeout(() => {
+        // Redirect to dashboard app (works for both Azure AD and demo mode)
+        window.location.href = '/dashboard';
+      }, 1500);
+    }
+  </script>
+
+</body>
+</html>
