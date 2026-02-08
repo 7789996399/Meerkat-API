@@ -71,45 +71,44 @@ const TEXT = "#f1f5f9";
 const MUTED = "#94a3b8";
 const DIM = "#64748b";
 
-// ─── The Big Idea (Grandmother explanation) ───
+// --- The Big Idea ---
 const BIG_IDEA = {
   title: "The Big Idea",
-  icon: "💡",
   content: [
     {
-      heading: "Think of it like airport security",
-      text: `Right now, Anthropic's legal plugin is like a really smart lawyer who works in an open office — anyone can walk up, hand them a document, and get advice back. No security checkpoint, no ID check, no record of what was reviewed.
+      heading: "The agent era needs governance infrastructure",
+      text: `Microsoft CEO Satya Nadella declared "SaaS is dead" -- business logic is moving out of software dashboards and into AI agents. Anthropic's Cowork plugins already have 160K+ legal installs alone. These agents are reviewing contracts overnight, analyzing portfolios at scale, and writing clinical notes in real time.
 
-Meerkat API is the airport security system. Every document and every AI response passes through our checkpoint. We scan for problems (hallucinations, bias, prompt attacks), stamp a "governance passport" on everything, and keep a complete audit trail.
+In the old world, humans checked the work. A senior lawyer reviewed the junior's memo. A physician double-checked the scribe's notes. But when AI agents are executing 500 contract reviews while everyone sleeps, who watches the agents?
 
-The beautiful part? The lawyer doesn't even notice we're there. They keep doing their job. We just make sure everything is safe and trustworthy.`
+That is the governance gap. AI providers secure the plumbing -- authentication, rate limits, model access. But nobody governs the agents' actual decisions. Meerkat fills that gap.`
     },
     {
-      heading: "What 'automated integration' means",
-      text: `Instead of each hospital, law firm, or bank having to build their own governance system from scratch, they just add ONE line of configuration to point their AI plugin through the Meerkat API. 
+      heading: "How Meerkat fits the stack",
+      text: `Meerkat is not a SaaS dashboard you subscribe to. It is infrastructure you plug into your AI stack -- the same way every website uses HTTPS for encryption without building their own.
 
-It's like how every website uses HTTPS for security — you don't build your own encryption. You plug into an existing system. Meerkat API is "governance-as-a-service" for AI agents.`
+Every AI agent request passes through a governance checkpoint. We scan for problems (hallucinations, bias, prompt attacks), stamp a trust score on every response, and keep a complete audit trail. The agent does not even know we are there. It keeps doing its job. We just make sure everything is safe, accurate, and auditable.`
     }
   ]
 };
 
-// ─── Architecture Flow ───
+// --- Architecture Flow ---
 const FLOW_STEPS = [
-  { id: 1, label: "User Request", desc: "Lawyer asks: 'Review this NDA'", icon: "👤", color: MUTED, detail: "A user in Anthropic's Cowork legal plugin types /review-contract and uploads a document. This request would normally go straight to Claude." },
-  { id: 2, label: "Meerkat Ingress", desc: "Request intercepted & scanned", icon: "🛡️", color: RED, detail: "The Meerkat API intercepts the request BEFORE it reaches Claude. It checks for prompt injection attacks, validates the user's permissions, rate-limits requests, and logs everything. Think of it as the bouncer at the door." },
-  { id: 3, label: "AI Processing", desc: "Claude / GPT / Gemini does its work", icon: "🤖", color: PURPLE, detail: "The sanitized request is forwarded to the AI model (Claude, GPT, Gemini — Meerkat is model-agnostic). The model does its thing: reviews the contract, flags clauses, generates recommendations." },
-  { id: 4, label: "Meerkat Egress", desc: "Response verified & scored", icon: "🔍", color: AMBER, detail: "This is where the magic happens. Before the AI's response reaches the user, Meerkat runs it through: (1) DeBERTa Entailment — does the AI's conclusion match the actual document text? (2) Semantic Entropy — how confident/uncertain is the model? (3) Implicit Preference — is the AI showing hidden bias? (4) Claim Extraction — are specific factual claims verifiable?" },
-  { id: 5, label: "Governance Score", desc: "Trust score + audit trail created", icon: "✅", color: GREEN, detail: "Every response gets a Meerkat Trust Score (0-100). High scores pass through. Low scores get flagged with specific warnings like 'Clause 7.2 analysis may be unreliable — semantic entropy exceeded threshold.' Everything is logged for compliance audits." },
-  { id: 6, label: "User Response", desc: "Verified answer delivered", icon: "📋", color: CYAN, detail: "The user receives the AI's contract review PLUS a trust overlay showing which parts are reliable, which need human review, and an overall governance score. The lawyer sees a clean, enhanced interface — not a wall of technical jargon." },
+  { id: 1, label: "Agent Request", desc: "AI agent receives a task: 'Review this NDA'", color: MUTED, detail: "A user in Anthropic's Cowork legal plugin types /review-contract and uploads a document. This request would normally go straight to Claude. In the agent era, this could also be an automated workflow -- no human in the loop at all." },
+  { id: 2, label: "Meerkat Ingress", desc: "Request intercepted and scanned", color: RED, detail: "The Meerkat API intercepts the request BEFORE it reaches Claude. It checks for prompt injection attacks, validates permissions, rate-limits requests, and logs everything. This is the pre-flight checkpoint." },
+  { id: 3, label: "AI Processing", desc: "Claude / GPT / Gemini does its work", color: PURPLE, detail: "The sanitized request is forwarded to the AI model (Claude, GPT, Gemini -- Meerkat is model-agnostic). The model processes normally: reviews the contract, flags clauses, generates recommendations." },
+  { id: 4, label: "Meerkat Egress", desc: "Response verified and scored", color: AMBER, detail: "Before the AI's response reaches the user or downstream system, Meerkat runs it through four checks: (1) DeBERTa Entailment -- does the conclusion match the actual document? (2) Semantic Entropy -- how confident is the model? (3) Implicit Preference -- is the AI showing hidden bias? (4) Claim Extraction -- are specific factual claims verifiable?" },
+  { id: 5, label: "Governance Score", desc: "Trust score + audit trail created", color: GREEN, detail: "Every response gets a Meerkat Trust Score (0-100). High scores pass through. Low scores get flagged with specific warnings like 'Clause 7.2 analysis may be unreliable -- semantic entropy exceeded threshold.' Everything is logged for compliance audits." },
+  { id: 6, label: "Verified Response", desc: "Governed answer delivered", color: CYAN, detail: "The user or downstream system receives the AI's contract review PLUS a trust overlay showing which parts are reliable, which need human review, and an overall governance score. For autonomous agent workflows, low scores can trigger automatic escalation to a human reviewer." },
 ];
 
-// ─── API Endpoints ───
+// --- API Endpoints ---
 const API_ENDPOINTS = [
   {
     method: "POST",
     path: "/v1/verify",
     name: "Real-time Verification",
-    desc: "The core endpoint. Send any AI input/output pair and get back a trust score with detailed analysis. This is the one-liner that any plugin calls.",
+    desc: "The core endpoint. Send any AI input/output pair and get back a trust score with detailed analysis. This is the one-liner that any plugin or agent calls.",
     example: `// This is ALL a plugin needs to integrate
 const response = await fetch(
   "https://api.meerkat.ai/v1/verify",
@@ -127,7 +126,7 @@ const response = await fetch(
       // The source document (for entailment checking)
       context: "[full NDA text here]",
       // Which governance checks to run
-      checks: ["entailment", "semantic_entropy", 
+      checks: ["entailment", "semantic_entropy",
                "implicit_preference", "claim_extraction"],
       // Domain-specific config
       domain: "legal",
@@ -175,7 +174,7 @@ const response = await fetch(
     method: "POST",
     path: "/v1/shield",
     name: "Prompt Injection Shield",
-    desc: "Pre-flight check. Scan user input BEFORE it reaches the AI model. Catches direct injection, indirect injection, and jailbreak attempts.",
+    desc: "Pre-flight check. Scan agent input BEFORE it reaches the AI model. Catches direct injection, indirect injection, and jailbreak attempts.",
     example: `const shieldCheck = await fetch(
   "https://api.meerkat.ai/v1/shield",
   {
@@ -207,7 +206,7 @@ const response = await fetch(
     method: "GET",
     path: "/v1/audit/{audit_id}",
     name: "Audit Trail",
-    desc: "Retrieve the full governance record for any past verification. Perfect for compliance reviews, regulator requests, and internal audits.",
+    desc: "Retrieve the full governance record for any past verification. Built for compliance reviews, regulator requests, and internal audits.",
     example: `const audit = await fetch(
   "https://api.meerkat.ai/v1/audit/aud_20260207_nda_review_001",
   {
@@ -268,7 +267,7 @@ const response = await fetch(
         legal_rules: {
           jurisdiction: "BC_Canada",
           contract_types: ["NDA", "MSA", "SaaS"],
-          risk_categories: ["IP", "non-compete", 
+          risk_categories: ["IP", "non-compete",
                            "liability", "termination"],
           playbook_id: "pb_standard_commercial"
         },
@@ -327,11 +326,10 @@ const response = await fetch(
   },
 ];
 
-// ─── Integration Examples ───
+// --- Integration Examples ---
 const INTEGRATIONS = [
   {
     name: "Anthropic Legal Plugin",
-    icon: "⚖️",
     how: "MCP Server",
     effort: "~2 hours",
     desc: "Add Meerkat as an MCP server in the Cowork plugin config. Every /review-contract and /triage-nda command automatically routes through Meerkat's /verify endpoint. Zero code changes to the plugin itself.",
@@ -349,7 +347,6 @@ const INTEGRATIONS = [
   },
   {
     name: "Anthropic API (Direct)",
-    icon: "🔌",
     how: "Proxy / Wrapper",
     effort: "~30 minutes",
     desc: "Point your Anthropic API calls through Meerkat's proxy endpoint. Meerkat forwards to Anthropic, gets the response, verifies it, and returns the verified result. One URL change.",
@@ -376,10 +373,9 @@ const response = await fetch(
   },
   {
     name: "Meerkat Financial (AWS)",
-    icon: "🏦",
     how: "AWS Middleware",
     effort: "Deploy stack",
-    desc: "Your existing 6-layer architecture. Meerkat Financial deploys as a CloudFormation stack in the client's AWS account. All AI traffic routes through your API Gateway → Lambda → Meerkat verification layers.",
+    desc: "Meerkat Financial deploys as a CloudFormation stack in the client's AWS account. All AI agent traffic routes through your API Gateway to Lambda to Meerkat verification layers.",
     code: `# Deploy Meerkat Financial in client's AWS:
 aws cloudformation deploy \\
   --template meerkat-financial-stack.yaml \\
@@ -395,7 +391,6 @@ aws cloudformation deploy \\
   },
   {
     name: "Healthcare (Cerner/Epic)",
-    icon: "🏥",
     how: "FHIR + HL7 Bridge",
     effort: "TRUST integration",
     desc: "The original TRUST use case. Meerkat connects to Cerner's sandbox EMR via FHIR APIs, intercepts AI Scribe outputs, and verifies them against patient records using DeBERTa entailment.",
@@ -418,7 +413,7 @@ const verified = await fetch(
   },
 ];
 
-// ─── Business Model ───
+// --- Business Model ---
 const PRICING_TIERS = [
   {
     name: "Starter",
@@ -431,22 +426,22 @@ const PRICING_TIERS = [
   {
     name: "Professional",
     price: "$499",
-    unit: "per month",
-    features: ["All 4 governance checks", "Unlimited verifications", "Full audit trail + export", "3 domains", "Dashboard access", "Prompt injection shield", "Priority support"],
+    unit: "per agent monitored / month",
+    features: ["All 4 governance checks", "Unlimited verifications per agent", "Full audit trail + export", "3 domains", "Dashboard access", "Prompt injection shield", "Priority support"],
     color: CYAN,
     best: "Mid-size firms, hospital departments, financial advisory"
   },
   {
     name: "Enterprise",
     price: "Custom",
-    unit: "per-bed / per-seat",
-    features: ["Everything in Professional", "On-premise / private cloud deploy", "Custom domain configs", "Unlimited domains", "SOC 2 / HIPAA / FINRA compliance", "SLA guarantee", "Dedicated support", "Sentinel monitoring agent"],
+    unit: "fleet pricing",
+    features: ["Everything in Professional", "On-premise / private cloud deploy", "Custom domain configs", "Unlimited domains and agents", "SOC 2 / HIPAA / FINRA compliance", "SLA guarantee", "Dedicated support", "Sentinel monitoring agent"],
     color: AMBER,
     best: "Hospital networks, large law firms, banks, insurance"
   },
 ];
 
-// ─── Styles ───
+// --- Styles ---
 const styles = {
   container: { fontFamily: "'IBM Plex Sans', 'Segoe UI', sans-serif", background: DARK, color: TEXT, minHeight: "100vh", padding: "0" },
   header: { background: `linear-gradient(135deg, ${DARK} 0%, #0f172a 50%, #1a1a2e 100%)`, padding: "48px 32px 32px", borderBottom: `1px solid ${BORDER}`, textAlign: "center" },
@@ -466,11 +461,11 @@ const styles = {
 };
 
 const TABS = [
-  { id: "idea", label: "💡 The Big Idea", },
-  { id: "flow", label: "🔄 How It Works" },
-  { id: "api", label: "📡 API Endpoints" },
-  { id: "integrate", label: "🔌 Integrations" },
-  { id: "pricing", label: "💰 Business Model" },
+  { id: "idea", label: "The Big Idea" },
+  { id: "flow", label: "How It Works" },
+  { id: "api", label: "API Endpoints" },
+  { id: "integrate", label: "Integrations" },
+  { id: "pricing", label: "Business Model" },
 ];
 
 function MeerkatAPI() {
@@ -483,10 +478,9 @@ function MeerkatAPI() {
     <div style={styles.container}>
       {/* Header */}
       <div style={styles.header}>
-        <div style={{ fontSize: "48px", marginBottom: "8px" }}>🔭</div>
         <h1 style={styles.headerTitle}>Meerkat Governance API</h1>
-        <p style={styles.headerSub}>Automated AI Governance Integration for Legal, Financial & Healthcare AI Agents</p>
-        <p style={{ fontSize: "12px", color: DIM, marginTop: "12px" }}>One API. Any AI model. Every regulated industry.</p>
+        <p style={styles.headerSub}>The Governance Layer for the AI Agent Era</p>
+        <p style={{ fontSize: "12px", color: DIM, marginTop: "12px" }}>Trust infrastructure for every AI agent in every regulated industry.</p>
       </div>
 
       {/* Nav */}
@@ -501,12 +495,11 @@ function MeerkatAPI() {
       {/* Content */}
       <div style={styles.content}>
 
-        {/* ═══ TAB: BIG IDEA ═══ */}
+        {/* === TAB: BIG IDEA === */}
         {tab === "idea" && (
           <div>
             <div style={{ ...styles.card, borderColor: `${CYAN}30` }}>
               <div style={styles.cardTitle}>
-                <span style={{ fontSize: "28px" }}>{BIG_IDEA.icon}</span>
                 <span>{BIG_IDEA.title}</span>
               </div>
               {BIG_IDEA.content.map((section, i) => (
@@ -520,39 +513,36 @@ function MeerkatAPI() {
             {/* The Key Insight Box */}
             <div style={{ ...styles.card, borderColor: `${AMBER}40`, background: `${AMBER}08` }}>
               <div style={styles.cardTitle}>
-                <span style={{ fontSize: "20px" }}>🎯</span>
                 <span style={{ color: AMBER }}>The Key Insight for Investors</span>
               </div>
               <p style={{ color: MUTED, fontSize: "14px", lineHeight: 1.8, margin: 0 }}>
-                Anthropic builds the <span style={{ color: CYAN, fontWeight: 700 }}>brain</span>. 
-                Domain plugins add <span style={{ color: PURPLE, fontWeight: 700 }}>skills</span>. 
-                But regulated industries need <span style={{ color: AMBER, fontWeight: 700 }}>supervision</span>.
+                The more autonomous AI agents become, the more they need governance. Nadella says SaaS is dead -- business logic is moving to agents. But agents operating in regulated industries cannot run unsupervised.
               </p>
               <div style={{ marginTop: "16px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                {["Legal plugin → Who verifies contract analysis?", "Financial plugin → Who catches biased recommendations?", "Healthcare AI → Who ensures clinical accuracy?"].map((q, i) => (
+                {["Legal agents -- Who verifies contract analysis?", "Financial agents -- Who catches biased recommendations?", "Healthcare agents -- Who ensures clinical accuracy?"].map((q, i) => (
                   <div key={i} style={{ background: `${AMBER}10`, border: `1px solid ${AMBER}25`, borderRadius: "8px", padding: "10px 14px", fontSize: "13px", color: AMBER, flex: "1", minWidth: "240px" }}>
                     {q}
                   </div>
                 ))}
               </div>
               <p style={{ color: TEXT, fontSize: "15px", fontWeight: 700, marginTop: "16px", marginBottom: 0 }}>
-                Answer: Meerkat. The governance API layer that every regulated AI deployment needs.
+                Answer: Meerkat. The governance infrastructure that every autonomous AI agent deployment needs.
               </p>
             </div>
 
             {/* Simple Diagram */}
             <div style={{ ...styles.card, textAlign: "center" }}>
-              <div style={styles.cardTitle}><span>📐</span><span>Architecture in One Picture</span></div>
+              <div style={styles.cardTitle}><span>Architecture in One Picture</span></div>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", marginTop: "16px" }}>
                 {[
-                  { label: "User", sub: "(Lawyer / Analyst / Doctor)", color: MUTED, bg: `${MUTED}15` },
+                  { label: "AI Agent / User", sub: "(Lawyer / Analyst / Doctor / Automated Workflow)", color: MUTED, bg: `${MUTED}15` },
                   null,
-                  { label: "🛡️ MEERKAT API", sub: "Shield + Verify + Audit", color: CYAN, bg: `${CYAN}15`, big: true },
+                  { label: "MEERKAT API", sub: "Shield + Verify + Audit", color: CYAN, bg: `${CYAN}15`, big: true },
                   null,
                   { label: "AI Model", sub: "(Claude / GPT / Gemini + Plugin)", color: PURPLE, bg: `${PURPLE}15` },
                 ].map((item, i) =>
                   item === null ? (
-                    <div key={i} style={{ color: DIM, fontSize: "20px" }}>↕</div>
+                    <div key={i} style={{ color: DIM, fontSize: "20px" }}>|</div>
                   ) : (
                     <div key={i} style={{ background: item.bg, border: `1px solid ${item.color}40`, borderRadius: "10px", padding: item.big ? "20px 40px" : "12px 32px", minWidth: "280px" }}>
                       <div style={{ color: item.color, fontWeight: 800, fontSize: item.big ? "18px" : "15px" }}>{item.label}</div>
@@ -561,16 +551,16 @@ function MeerkatAPI() {
                   )
                 )}
               </div>
-              <p style={{ color: DIM, fontSize: "12px", marginTop: "16px", marginBottom: 0 }}>Meerkat sits between the user and the AI — inspecting everything in both directions</p>
+              <p style={{ color: DIM, fontSize: "12px", marginTop: "16px", marginBottom: 0 }}>Meerkat sits between the agent and the AI model -- inspecting everything in both directions</p>
             </div>
           </div>
         )}
 
-        {/* ═══ TAB: FLOW ═══ */}
+        {/* === TAB: FLOW === */}
         {tab === "flow" && (
           <div>
             <p style={{ color: MUTED, fontSize: "14px", marginBottom: "24px" }}>
-              Click any step to see what happens at each stage. Follow the flow from top to bottom — this is the journey of every AI request through Meerkat.
+              Click any step to see what happens at each stage. Follow the flow from top to bottom -- this is the journey of every AI agent request through Meerkat.
             </p>
             {FLOW_STEPS.map((step, i) => (
               <div key={step.id}>
@@ -582,7 +572,6 @@ function MeerkatAPI() {
                     <div style={styles.stepNumber(step.color)}>{step.id}</div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                        <span style={{ fontSize: "18px" }}>{step.icon}</span>
                         <span style={{ fontWeight: 700, fontSize: "15px" }}>{step.label}</span>
                         {(step.id === 2 || step.id === 4 || step.id === 5) && (
                           <span style={styles.tag(step.color)}>MEERKAT</span>
@@ -590,7 +579,7 @@ function MeerkatAPI() {
                       </div>
                       <div style={{ color: MUTED, fontSize: "13px" }}>{step.desc}</div>
                     </div>
-                    <span style={{ color: DIM, fontSize: "20px" }}>{activeStep === step.id ? "−" : "+"}</span>
+                    <span style={{ color: DIM, fontSize: "20px" }}>{activeStep === step.id ? "-" : "+"}</span>
                   </div>
                   {activeStep === step.id && (
                     <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: `1px solid ${BORDER}`, color: MUTED, fontSize: "13px", lineHeight: 1.8 }}>
@@ -598,23 +587,23 @@ function MeerkatAPI() {
                     </div>
                   )}
                 </div>
-                {i < FLOW_STEPS.length - 1 && <div style={styles.arrow}>↓</div>}
+                {i < FLOW_STEPS.length - 1 && <div style={styles.arrow}>|</div>}
               </div>
             ))}
 
             <div style={{ ...styles.card, marginTop: "24px", borderColor: `${GREEN}30` }}>
-              <div style={styles.cardTitle}><span>⏱️</span><span>Performance</span></div>
+              <div style={styles.cardTitle}><span>Performance</span></div>
               <p style={{ color: MUTED, fontSize: "13px", margin: 0, lineHeight: 1.8 }}>
                 Total added latency: <span style={{ color: GREEN, fontWeight: 700 }}>~200-400ms</span> per request.
-                That's barely noticeable when a contract review already takes 5-15 seconds.
+                That is barely noticeable when a contract review already takes 5-15 seconds.
                 The DeBERTa entailment check runs on ONNX-optimized Azure ML endpoints for speed.
-                Prompt injection shield adds only ~50ms since it's a lightweight classifier.
+                Prompt injection shield adds only ~50ms since it is a lightweight classifier.
               </p>
             </div>
           </div>
         )}
 
-        {/* ═══ TAB: API ENDPOINTS ═══ */}
+        {/* === TAB: API ENDPOINTS === */}
         {tab === "api" && (
           <div>
             <p style={{ color: MUTED, fontSize: "14px", marginBottom: "24px" }}>
@@ -657,11 +646,11 @@ function MeerkatAPI() {
           </div>
         )}
 
-        {/* ═══ TAB: INTEGRATIONS ═══ */}
+        {/* === TAB: INTEGRATIONS === */}
         {tab === "integrate" && (
           <div>
             <p style={{ color: MUTED, fontSize: "14px", marginBottom: "24px" }}>
-              The whole point of the Meerkat API is that integration is fast and painless. Here are the 4 main integration paths — from "plug and play" to "full deployment."
+              Meerkat is designed to plug into existing AI agent stacks with minimal friction. Here are the 4 main integration paths -- from plug-and-play to full deployment.
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "24px" }}>
               {INTEGRATIONS.map((integ, i) => (
@@ -670,7 +659,7 @@ function MeerkatAPI() {
                   onClick={() => setActiveInteg(i)}
                   style={styles.navBtn(activeInteg === i)}
                 >
-                  {integ.icon} {integ.name}
+                  {integ.name}
                 </button>
               ))}
             </div>
@@ -680,7 +669,6 @@ function MeerkatAPI() {
               return (
                 <div style={styles.card}>
                   <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
-                    <span style={{ fontSize: "32px" }}>{integ.icon}</span>
                     <div>
                       <h3 style={{ fontSize: "18px", fontWeight: 700, margin: 0 }}>{integ.name}</h3>
                       <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
@@ -699,22 +687,21 @@ function MeerkatAPI() {
 
             {/* MCP Callout */}
             <div style={{ ...styles.card, borderColor: `${PURPLE}30`, background: `${PURPLE}08` }}>
-              <div style={styles.cardTitle}><span>🔗</span><span style={{ color: PURPLE }}>Why MCP Is the Key</span></div>
+              <div style={styles.cardTitle}><span style={{ color: PURPLE }}>Why MCP Is the Key</span></div>
               <p style={{ color: MUTED, fontSize: "13px", lineHeight: 1.8, margin: 0 }}>
-                Anthropic's plugins are built on <strong style={{ color: PURPLE }}>MCP (Model Context Protocol)</strong> — their open standard for connecting AI to external systems. 
-                This is a gift for Meerkat. By implementing the Meerkat API as an MCP server, any Cowork plugin (legal, financial, healthcare) can add governance with a single config line. 
-                No code changes. No custom integration. Just add Meerkat as an MCP connection and every AI output gets verified automatically.
-                This is the "automated integration" you're asking about — MCP makes it possible.
+                Anthropic's plugins are built on <strong style={{ color: PURPLE }}>MCP (Model Context Protocol)</strong> -- their open standard for connecting AI agents to external systems.
+                This is a gift for Meerkat. By implementing the Meerkat API as an MCP server, any Cowork plugin (legal, financial, healthcare) can add governance with a single config line.
+                No code changes. No custom integration. Just add Meerkat as an MCP connection and every AI agent output gets verified automatically.
               </p>
             </div>
           </div>
         )}
 
-        {/* ═══ TAB: PRICING ═══ */}
+        {/* === TAB: PRICING === */}
         {tab === "pricing" && (
           <div>
             <p style={{ color: MUTED, fontSize: "14px", marginBottom: "24px" }}>
-              Three tiers designed to match how governance needs scale. The API-first approach means clients start small and grow.
+              Consumption-based pricing for the agent era. You pay for governance work done, not seats occupied. As AI agents replace per-seat SaaS workflows, pricing should follow the same shift.
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", marginBottom: "24px" }}>
               {PRICING_TIERS.map((tier, i) => (
@@ -728,7 +715,7 @@ function MeerkatAPI() {
                   <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
                     {tier.features.map((f, j) => (
                       <li key={j} style={{ fontSize: "13px", color: MUTED, padding: "5px 0", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: "8px" }}>
-                        <span style={{ color: tier.color }}>✓</span> {f}
+                        <span style={{ color: tier.color }}>--</span> {f}
                       </li>
                     ))}
                   </ul>
@@ -738,13 +725,13 @@ function MeerkatAPI() {
 
             {/* Revenue projection */}
             <div style={{ ...styles.card, borderColor: `${GREEN}30` }}>
-              <div style={styles.cardTitle}><span>📊</span><span>Revenue Math</span></div>
+              <div style={styles.cardTitle}><span>Revenue Math</span></div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginTop: "12px" }}>
                 {[
-                  { label: "Legal Plugin Users", stat: "~160K installs", sub: "Already installed (per Anthropic's page)", color: PURPLE },
-                  { label: "If 1% convert to Pro", stat: "1,600 firms", sub: "× $499/mo = $9.6M ARR", color: CYAN },
-                  { label: "Enterprise (Cerner)", stat: "20K-30K facilities", sub: "Per-bed model → $350K-$14M", color: AMBER },
-                  { label: "Financial Services", stat: "New market", sub: "Banks, insurance, advisory", color: GREEN },
+                  { label: "Legal Plugin Agents", stat: "~160K installs", sub: "Already installed (per Anthropic's page)", color: PURPLE },
+                  { label: "If 1% adopt Pro tier", stat: "1,600 firms", sub: "x $499/agent/mo = $9.6M ARR", color: CYAN },
+                  { label: "Enterprise (Cerner)", stat: "20K-30K facilities", sub: "Fleet pricing per network", color: AMBER },
+                  { label: "Financial Services", stat: "New market", sub: "Banks, insurance, advisory agents", color: GREEN },
                 ].map((item, i) => (
                   <div key={i} style={{ background: `${item.color}08`, border: `1px solid ${item.color}25`, borderRadius: "8px", padding: "16px" }}>
                     <div style={{ color: DIM, fontSize: "11px", fontWeight: 700, letterSpacing: "0.5px" }}>{item.label}</div>
@@ -760,10 +747,10 @@ function MeerkatAPI() {
         {/* Footer */}
         <div style={{ textAlign: "center", padding: "32px 0 16px", borderTop: `1px solid ${BORDER}`, marginTop: "32px" }}>
           <p style={{ color: DIM, fontSize: "12px", margin: 0 }}>
-            🔭 Meerkat Governance API — Always watching. Always verifying. Always trustworthy.
+            Meerkat Governance API -- Always watching. Always verifying. Always trustworthy.
           </p>
           <p style={{ color: DIM, fontSize: "11px", marginTop: "4px" }}>
-            Meerkat Platform by Jean & CL — Vancouver, BC
+            Meerkat Platform by Jean and CL -- Vancouver, BC
           </p>
         </div>
       </div>

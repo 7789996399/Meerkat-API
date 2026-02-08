@@ -7,34 +7,40 @@
 </p>
 
 <h1 align="center">Meerkat API</h1>
-<h3 align="center">AI Governance as a Service</h3>
+<h3 align="center">The Governance Layer for the AI Agent Era</h3>
 
 <p align="center">
   <strong>One API. Any AI model. Every regulated industry.</strong>
 </p>
 
 <p align="center">
-  Think of Meerkat as <b>airport security for AI</b>.<br/>
-  Every request and every response passes through a checkpoint —<br/>
-  scanned for hallucinations, bias, prompt attacks, and compliance violations —<br/>
-  before anything reaches the end user.
+  As AI agents take over business logic -- reviewing contracts, analyzing<br/>
+  financials, writing clinical notes -- the question is not whether to use them.<br/>
+  It is who watches the agents.<br/><br/>
+  Meerkat is the trust infrastructure that sits between AI agents and the<br/>
+  systems they operate on. Every request scanned. Every response verified.<br/>
+  Every decision audited.
 </p>
 
 ---
 
 ## The Problem
 
-Anthropic just launched legal, financial, and healthcare plugins for Cowork — with **160K+ installs for legal alone**. These AI agents are already reviewing contracts, analyzing financials, and writing clinical notes in production.
+Microsoft CEO Satya Nadella declared **"SaaS is dead"** -- business logic is moving out of software applications and into AI agents. The per-seat dashboard is being replaced by autonomous agents that talk directly to systems via APIs.
+
+This is already happening. Anthropic launched legal, financial, and healthcare plugins for Cowork -- with **160K+ installs for legal alone**. These AI agents are reviewing contracts overnight, analyzing portfolios at scale, and writing clinical notes in real time. They are not assistants waiting for instructions. They are autonomous workers executing business logic.
 
 But ask yourself:
 
-- **Who verifies the AI's output?** A hallucinated contract clause could cost millions.
+- **Who verifies the agent's output?** A hallucinated contract clause could cost millions.
 - **Who catches the bias?** A skewed financial recommendation could trigger regulatory action.
-- **Who creates the audit trail?** Regulators don't accept "the AI said so."
+- **Who creates the audit trail?** Regulators do not accept "the AI said so."
 
-The AI providers secure the plumbing — authentication, rate limits, model access.
+The AI providers secure the plumbing -- authentication, rate limits, model access. But nobody governs the agents' actual decisions.
 
-**Meerkat governs the _use_.**
+**In the old world, humans checked the work. In the agent era, you need infrastructure that checks the agents.**
+
+That infrastructure is Meerkat.
 
 Every prompt. Every response. Every claim. Scored, logged, and auditable.
 
@@ -43,63 +49,59 @@ Every prompt. Every response. Every claim. Scored, logged, and auditable.
 ## How It Works
 
 ```
-┌──────────┐     ┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐     ┌──────────┐
-│          │     │                 │     │              │     │                 │     │          │
-│   User   │────▶│  Meerkat Shield │────▶│   AI Model   │────▶│  Meerkat Verify │────▶│   User   │
-│ Request  │     │  (scan input)   │     │  (Claude /   │     │ (check output)  │     │ Response │
-│          │     │                 │     │  GPT / etc.) │     │                 │     │          │
-└──────────┘     └─────────────────┘     └──────────────┘     └─────────────────┘     └──────────┘
-                        │                                            │
-                        ▼                                            ▼
++-----------+     +-----------------+     +--------------+     +-----------------+     +----------+
+|           |     |                 |     |              |     |                 |     |          |
+| AI Agent  |---->|  Meerkat Shield |---->|   AI Model   |---->|  Meerkat Verify |---->| Verified |
+| Request   |     |  (scan input)   |     |  (Claude /   |     | (check output)  |     | Response |
+|           |     |                 |     |  GPT / etc.) |     |                 |     |          |
++-----------+     +-----------------+     +--------------+     +-----------------+     +----------+
+                        |                                            |
+                        v                                            v
                  Prompt injection?                          Governance Score
-                 Jailbreak attempt?                         ├─ Entailment pass/fail
-                 Policy violation?                          ├─ Confidence level
-                                                            ├─ Bias detected?
-                                                            ├─ Claims verified?
-                                                            │
-                                                            ▼
-                                                   ┌─────────────────┐
-                                                   │   Audit Trail   │
-                                                   │  (immutable)    │
-                                                   └─────────────────┘
+                 Jailbreak attempt?                         +-- Entailment pass/fail
+                 Policy violation?                          +-- Confidence level
+                                                            +-- Bias detected?
+                                                            +-- Claims verified?
+                                                            |
+                                                            v
+                                                   +-----------------+
+                                                   |   Audit Trail   |
+                                                   |  (immutable)    |
+                                                   +-----------------+
 ```
 
 ---
 
 ## Live Demo
 
-**Meerkat ships with a fully interactive frontend — login page + governance dashboard.**
+Meerkat ships with a fully interactive frontend -- login page + governance dashboard.
 
 ```
-┌─────────────────┐      ┌──────────────────┐      ┌─────────────────────────────┐
-│                 │      │                  │      │                             │
-│  Login Page     │─────▶│  Microsoft SSO   │─────▶│  Governance Dashboard       │
-│  (login.html)   │      │  (Azure AD)      │      │  (React app — 5 tabs)       │
-│                 │      │                  │      │                             │
-└─────────────────┘      └──────────────────┘      └─────────────────────────────┘
++-----------------+      +------------------+      +-----------------------------+
+|                 |      |                  |      |                             |
+|  Login Page     |----->|  Microsoft SSO   |----->|  Governance Dashboard       |
+|  (login.html)   |      |  (Azure AD)      |      |  (React app -- 5 tabs)      |
+|                 |      |                  |      |                             |
++-----------------+      +------------------+      +-----------------------------+
 ```
 
-The **login page** (`frontend/login.html`) is the front door — a polished dark-themed SSO page with the full MEERKAT logo and Microsoft sign-in. In demo mode, it redirects straight to the dashboard.
+The **login page** (`frontend/login.html`) is the front door -- a polished dark-themed SSO page with the full MEERKAT logo and Microsoft sign-in. In demo mode, it redirects straight to the dashboard.
 
-The **dashboard** (`frontend/dashboard/`) is an interactive React app that serves as both documentation and live demo, with 5 tabs:
+The **dashboard** (`frontend/dashboard.html`) is an interactive React app that serves as both documentation and live demo, with 5 tabs:
 
 | Tab | What It Shows |
 |-----|---------------|
-| **The Big Idea** | The airport security analogy — why governance matters |
-| **How It Works** | Interactive 6-step flow from user request to verified response |
+| **The Big Idea** | The agent-era thesis -- why autonomous AI needs governance infrastructure |
+| **How It Works** | Interactive 6-step flow from agent request to verified response |
 | **API Endpoints** | Full request/response examples for all 5 endpoints |
 | **Integrations** | MCP, API proxy, AWS, and FHIR integration paths |
-| **Business Model** | Pricing tiers and revenue projections |
-
-<p align="center">
-  <em>[ Screenshot placeholder — login.html → dashboard flow ]</em>
-</p>
+| **Business Model** | Consumption-based pricing and revenue projections |
 
 > **Try it locally:**
 > ```bash
-> # Serve the login page
-> cd frontend && python -m http.server 3000
-> # Visit http://localhost:3000/login.html
+> # Start the API (serves frontend automatically)
+> uvicorn api.main:app --port 8000
+> # Visit http://localhost:8000/login
 > ```
 
 ---
@@ -108,11 +110,11 @@ The **dashboard** (`frontend/dashboard/`) is an interactive React app that serve
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/v1/shield` | **Prompt injection detection** — Pre-flight scan of user input for jailbreaks, prompt attacks, and policy violations |
-| `POST` | `/v1/verify` | **Real-time output verification** — Entailment checking, semantic entropy, bias detection, and claim extraction on AI responses |
-| `GET` | `/v1/audit/{id}` | **Compliance audit trail** — Immutable, timestamped record of every governance decision for regulatory review |
-| `POST` | `/v1/configure` | **Domain & org configuration** — Set industry-specific rules, thresholds, and compliance policies per organization |
-| `GET` | `/v1/dashboard` | **Governance metrics** — Live view of shield blocks, verification scores, flagged responses, and system health |
+| `POST` | `/v1/shield` | **Prompt injection detection** -- Pre-flight scan of agent input for jailbreaks, prompt attacks, and policy violations |
+| `POST` | `/v1/verify` | **Real-time output verification** -- Entailment checking, semantic entropy, bias detection, and claim extraction on AI responses |
+| `GET` | `/v1/audit/{id}` | **Compliance audit trail** -- Immutable, timestamped record of every governance decision for regulatory review |
+| `POST` | `/v1/configure` | **Domain and org configuration** -- Set industry-specific rules, thresholds, and compliance policies per organization |
+| `GET` | `/v1/dashboard` | **Governance metrics** -- Aggregated view of shield blocks, verification scores, flagged responses, and system health |
 
 ---
 
@@ -135,7 +137,7 @@ Connect Meerkat to any Anthropic Cowork plugin with one config block:
 }
 ```
 
-This gives Claude access to four governance tools: `meerkat_shield` (pre-flight input scan), `meerkat_verify` (post-flight output verification), `meerkat_audit` (compliance trail), and `meerkat_configure` (org rules). See [mcp/README.md](mcp/README.md) for full setup instructions and examples.
+This gives the agent access to four governance tools: `meerkat_shield` (pre-flight input scan), `meerkat_verify` (post-flight output verification), `meerkat_audit` (compliance trail), and `meerkat_configure` (org rules). See [mcp/README.md](mcp/README.md) for full setup instructions and examples.
 
 ---
 
@@ -147,21 +149,21 @@ This gives Claude access to four governance tools: `meerkat_shield` (pre-flight 
 # Claude automatically shields input and verifies output.
 ```
 
-#### API Proxy — Change 1 URL to route through Meerkat
+#### API Proxy -- Change 1 URL to route agent traffic through Meerkat
 ```python
 # Before
 client = Anthropic(base_url="https://api.anthropic.com")
 
-# After — all traffic now governed
+# After -- all agent traffic now governed
 client = Anthropic(base_url="https://your-instance.meerkat.ai/proxy")
 ```
 
-#### AWS Middleware — One-click CloudFormation deploy
+#### AWS Middleware -- One-click CloudFormation deploy
 ```bash
 aws cloudformation deploy --template meerkat-stack.yaml --stack-name meerkat-gov
 ```
 
-#### FHIR Bridge — Healthcare EMR integration
+#### FHIR Bridge -- Healthcare EMR integration
 ```yaml
 # meerkat.config.yaml
 domain: healthcare
@@ -173,14 +175,14 @@ governance_level: strict
 
 ## Governance Checks
 
-What makes Meerkat unique — every AI response is evaluated across four dimensions:
+Every AI agent response is evaluated across four dimensions:
 
 | Check | What It Does | Why It Matters |
 |-------|-------------|----------------|
-| **DeBERTa Entailment** | Compares the AI's answer against source documents using NLI | Catches hallucinations — does the response actually follow from the evidence? |
-| **Semantic Entropy** | Measures model uncertainty across multiple sampled completions | Flags low-confidence answers before they reach end users |
-| **Implicit Preference** | Detects hidden directional bias in language and recommendations | Ensures the AI isn't steering users toward undisclosed preferences |
-| **Claim Extraction** | Identifies factual assertions and checks verifiability | Every claim is tagged — verified, unverified, or contradicted |
+| **DeBERTa Entailment** | Compares the agent's answer against source documents using NLI | Catches hallucinations -- does the response actually follow from the evidence? |
+| **Semantic Entropy** | Measures model uncertainty across multiple sampled completions | Flags low-confidence answers before they reach downstream systems |
+| **Implicit Preference** | Detects hidden directional bias in language and recommendations | Ensures the agent is not steering users toward undisclosed preferences |
+| **Claim Extraction** | Identifies factual assertions and checks verifiability | Every claim is tagged -- verified, unverified, or contradicted |
 
 ---
 
@@ -188,27 +190,44 @@ What makes Meerkat unique — every AI response is evaluated across four dimensi
 
 #### Install
 ```bash
-pip install meerkat-gov
+pip install -r requirements.txt
 ```
 
 #### Or run with Docker
 ```bash
-docker run -p 8000:8000 meerkatai/governance:latest
+docker compose up
 ```
 
-#### Verify an AI response in 5 lines
+#### Verify an AI agent response in 5 lines
 ```python
 import requests
 
 result = requests.post("http://localhost:8000/v1/verify", json={
-    "model_output": "The contract includes a 90-day termination clause.",
-    "source_document": "Section 12.1: Either party may terminate with 30 days written notice.",
+    "input": "Review this NDA for risks.",
+    "output": "The contract includes a 90-day termination clause.",
+    "context": "Section 12.1: Either party may terminate with 30 days written notice.",
     "domain": "legal"
 }).json()
 
-print(result["governance_score"])   # 0.23 — LOW (hallucination detected)
-print(result["flags"])              # ["entailment_contradiction", "claim_mismatch"]
+print(result["trust_score"])   # 32 -- BLOCK (hallucination detected)
+print(result["status"])        # "BLOCK"
 ```
+
+---
+
+## Pricing
+
+Consumption-based pricing aligned with the agent era -- you pay for governance work done, not seats occupied.
+
+| Tier | Price | Model | Best For |
+|------|-------|-------|----------|
+| **Starter** | $0.002 per verification | Pay-per-use, no commitment | Solo practitioners, small firms testing the waters |
+| **Professional** | $499/mo per agent monitored | Flat rate per AI agent under governance, unlimited verifications | Mid-size firms, hospital departments, financial advisory teams |
+| **Enterprise** | Custom fleet pricing | Per-agent-fleet pricing for organizations running multiple agents across domains | Hospital networks, large law firms, banks, insurance companies |
+
+Starter includes: entailment checking, semantic entropy, basic audit trail, 1 domain.
+Professional adds: all 4 governance checks, prompt injection shield, dashboard, priority support.
+Enterprise adds: on-premise deploy, custom domain configs, SOC 2 / HIPAA / FINRA compliance, SLA guarantee.
 
 ---
 
@@ -225,25 +244,25 @@ print(result["flags"])              # ["entailment_contradiction", "claim_mismat
 
 ---
 
-## Project Status: Alpha — Demo Available
+## Project Status
 
 ```
-Phase 1  ████████████████████████  DONE -- Demo API with simulated governance
-Phase 2  ░░░░░░░░░░░░░░░░░░░░░░░░  Real DeBERTa entailment integration
-Phase 3  ████████████████████████  DONE -- MCP server for Anthropic plugins
-Phase 4  ░░░░░░░░░░░░░░░░░░░░░░░░  Production deployment on AWS
+Phase 1  ========================  DONE -- Demo API with governance engine
+Phase 2  ........................  Real DeBERTa entailment integration
+Phase 3  ========================  DONE -- MCP server for Cowork plugins
+Phase 4  ........................  Production deployment on AWS
 ```
 
 | Phase | Milestone | Status |
 |-------|-----------|--------|
-| **1** | Demo API with simulated governance scores | **Done** |
-| **2** | Real DeBERTa entailment + semantic entropy | Planned |
+| **1** | Demo API with governance engine (4 checks, weighted scoring) | **Done** |
+| **2** | Real DeBERTa entailment + semantic entropy models | Planned |
 | **3** | MCP server for Anthropic Cowork plugins | **Done** |
-| **4** | Production deployment on AWS with full audit | Planned |
+| **4** | Production deployment on AWS with full audit persistence | Planned |
 
 ---
 
 <p align="center">
-  <strong>Built by Jean & CL — Vancouver, BC</strong><br/>
+  <strong>Built by Jean and CL -- Vancouver, BC</strong><br/>
   <em>Always watching. Always verifying. Always trustworthy.</em>
 </p>

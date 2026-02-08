@@ -534,7 +534,7 @@ Transparency on what's real and what's simulated:
 | **Trust score** | Weighted average of simulated check scores | Weighted average of real check scores |
 | **Audit trail** | In-memory dict (lost on restart) | DynamoDB / PostgreSQL with encryption |
 | **Dashboard data** | Seeded sample data | Live aggregation from audit store |
-| **MCP server** | Not yet implemented | Full MCP protocol server |
+| **MCP server** | Full MCP protocol server (FastMCP + httpx) | Same -- production-ready |
 | **Latency** | ~50ms (no real inference) | ~200-400ms (ONNX inference) |
 
 **The API contract is identical between demo and production.** A client integrated against the demo API will work without changes when pointed at production. Only the quality of governance scores improves.
