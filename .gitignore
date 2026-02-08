@@ -1,5 +1,37 @@
+# Node
 node_modules/
 dist/
-.env
 *.js.map
 uploads/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# Environment variables (never commit secrets)
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Logs
+*.log
