@@ -1,0 +1,213 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+enum Plan {
+  starter
+  professional
+  enterprise
+}
+
+enum Domain {
+  legal
+  financial
+  healthcare
+}
+
+enum KeyStatus {
+  active
+  revoked
+}
+
+enum VerificationStatus {
+  PASS
+  FLAG
+  BLOCK
+}
+
+enum ThreatLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum ThreatAction {
+  BLOCK
+  FLAG
+  SANITIZE
+}
+
+enum ReviewAction {
+  approved
+  rejected
+  escalated
+}
+
+enum KnowledgeBaseStatus {
+  processing
+  indexed
+  error
+}
+
+enum DocumentStatus {
+  uploaded
+  chunking
+  indexed
+  error
+}
+
+model Organization {
+  id                          String    @id @default(uuid())
+  name                        String
+  plan                        Plan
+  domain                      Domain
+  stripeCustomerId            String?   @unique @map("stripe_customer_id")
+  stripeSubscriptionId        String?   @unique @map("stripe_subscription_id")
+  planStartedAt               DateTime? @map("plan_started_at")
+  currentPeriodVerifications  Int       @default(0) @map("current_period_verifications")
+  createdAt                   DateTime  @default(now()) @map("created_at")
+
+  apiKeys        ApiKey[]
+  configurations Configuration[]
+  verifications  Verification[]
+  threatLogs     ThreatLog[]
+  knowledgeBases KnowledgeBase[]
+  users          User[]
+
+  @@map("organizations")
+}
+
+model ApiKey {
+  id         String    @id @default(uuid())
+  orgId      String    @map("org_id")
+  org        Organization @relation(fields: [orgId], references: [id])
+  keyPrefix  String    @map("key_prefix")
+  keyHash    String    @map("key_hash")
+  name       String
+  status     KeyStatus @default(active)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastUsedAt DateTime? @map("last_used_at")
+
+  @@map("api_keys")
+}
+
+model Configuration {
+  id                    String   @id @default(uuid())
+  orgId                 String   @map("org_id")
+  org                   Organization @relation(fields: [orgId], references: [id])
+  autoApproveThreshold  Int      @default(85) @map("auto_approve_threshold")
+  autoBlockThreshold    Int      @default(40) @map("auto_block_threshold")
+  requiredChecks        Json     @default("[]") @map("required_checks")
+  optionalChecks        Json     @default("[]") @map("optional_checks")
+  domainRules           Json     @default("{}") @map("domain_rules")
+  notificationSettings  Json     @default("{}") @map("notification_settings")
+  knowledgeBaseEnabled  Boolean  @default(false) @map("knowledge_base_enabled")
+  kbTopK                Int      @default(5) @map("kb_top_k")
+  kbMinRelevance        Float    @default(0.75) @map("kb_min_relevance")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("configurations")
+}
+
+model Verification {
+  id                  String             @id @default(uuid())
+  orgId               String             @map("org_id")
+  org                 Organization       @relation(fields: [orgId], references: [id])
+  auditId             String             @unique @map("audit_id")
+  agentName           String?            @map("agent_name")
+  modelUsed           String?            @map("model_used")
+  domain              Domain
+  userInput           String             @map("user_input")
+  aiOutput            String             @map("ai_output")
+  sourceContext       String?            @map("source_context")
+  trustScore          Int                @map("trust_score")
+  status              VerificationStatus
+  checksResults       Json               @map("checks_results")
+  flags               Json               @default("[]")
+  humanReviewRequired Boolean            @default(false) @map("human_review_required")
+  reviewedBy          String?            @map("reviewed_by")
+  reviewAction        ReviewAction?      @map("review_action")
+  reviewNote          String?            @map("review_note")
+  reviewedAt          DateTime?          @map("reviewed_at")
+  createdAt           DateTime           @default(now()) @map("created_at")
+
+  @@map("verifications")
+}
+
+model ThreatLog {
+  id          String       @id @default(uuid())
+  orgId       String       @map("org_id")
+  org         Organization @relation(fields: [orgId], references: [id])
+  inputText   String       @map("input_text")
+  threatLevel ThreatLevel  @map("threat_level")
+  attackType  String       @map("attack_type")
+  actionTaken ThreatAction @map("action_taken")
+  detail      String
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  @@map("threat_log")
+}
+
+model KnowledgeBase {
+  id        String              @id @default(uuid())
+  orgId     String              @map("org_id")
+  org       Organization        @relation(fields: [orgId], references: [id])
+  name      String
+  status    KnowledgeBaseStatus @default(processing)
+  createdAt DateTime            @default(now()) @map("created_at")
+
+  documents Document[]
+
+  @@map("knowledge_bases")
+}
+
+model Document {
+  id              String         @id @default(uuid())
+  knowledgeBaseId String         @map("knowledge_base_id")
+  knowledgeBase   KnowledgeBase  @relation(fields: [knowledgeBaseId], references: [id])
+  filename        String
+  fileSize        Int            @map("file_size")
+  mimeType        String         @map("mime_type")
+  status          DocumentStatus @default(uploaded)
+  chunkCount      Int            @default(0) @map("chunk_count")
+  uploadedAt      DateTime       @default(now()) @map("uploaded_at")
+
+  chunks Chunk[]
+
+  @@map("documents")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  orgId        String   @map("org_id")
+  org          Organization @relation(fields: [orgId], references: [id])
+  microsoftOid String   @unique @map("microsoft_oid")
+  email        String
+  name         String
+  role         String   @default("member")
+  createdAt    DateTime @default(now()) @map("created_at")
+  lastLoginAt  DateTime @default(now()) @map("last_login_at")
+
+  @@map("users")
+}
+
+model Chunk {
+  id         String   @id @default(uuid())
+  documentId String   @map("document_id")
+  document   Document @relation(fields: [documentId], references: [id])
+  content    String
+  chunkIndex Int      @map("chunk_index")
+  embedding  Unsupported("vector(1536)")?
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("chunks")
+}

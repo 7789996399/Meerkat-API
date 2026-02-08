@@ -1,0 +1,10 @@
+{
+  "mcp_servers": {
+    "meerkat": {
+      "url": "https://api.meerkat.ai/mcp",
+      "api_key": "mk_live_your_key_here",
+      "config_id": "cfg_your_config",
+      "mode": "intercept"
+    }
+  }
+}
