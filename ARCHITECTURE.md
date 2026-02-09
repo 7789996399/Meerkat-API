@@ -1,1057 +1,395 @@
 # Architecture
 
-> Technical deep-dive into the Meerkat Governance API — for developers, contributors, and technical reviewers.
+Technical specification for the Meerkat governance platform. Covers the deployed TRUST healthcare pipeline and the multi-domain Meerkat API.
 
 ---
 
 ## 1. System Overview
 
-Meerkat API is a **stateless verification middleware** that sits between client applications and AI models. It intercepts requests and responses, applies governance checks, and produces auditable trust scores.
+Meerkat is a verification middleware that intercepts AI-generated outputs and evaluates them against ground truth sources before delivery. The system is deployed in two forms:
 
-**Core design principles:**
+**TRUST Healthcare Platform** -- currently live on Azure, purpose-built for clinical AI governance. Connects to Cerner via FHIR APIs, runs semantic entropy analysis, and surfaces results in a PowerChart-style physician dashboard.
 
-| Principle | Detail |
-|-----------|--------|
-| **Stateless** | No session state between requests. Each verification is self-contained. Audit logs are the only persistent artifact. |
-| **Model-agnostic** | Works with Claude, GPT, Gemini, Llama, Mistral, or any model that accepts text in / text out. Meerkat never touches model weights. |
-| **Domain-configurable** | Governance rules, thresholds, and check suites are configured per domain (legal, financial, healthcare) and per organization. |
-| **Low-latency** | Target: **<400ms added latency** on top of the underlying model call. The prompt injection shield adds ~50ms. Full verification adds ~200-400ms using ONNX-optimized inference. |
-| **Audit-first** | Every governance decision produces an immutable audit record before the response is returned. The audit trail is not optional. |
+**Meerkat API** -- the multi-domain expansion. A Node.js/TypeScript API with pluggable governance checks, backed by Python microservices for ML-intensive tasks. Supports legal, financial, and healthcare domains.
 
----
-
-## 2. Architecture Diagram
+### TRUST Healthcare Pipeline
 
 ```
-                    ┌──────────────────────┐
-                    │   Client App /       │
-                    │   Cowork Plugin /    │
-                    │   API Consumer       │
-                    └──────────┬───────────┘
-                               │
-                          HTTP Request
-                               │
-                               ▼
-                ┌──────────────────────────────┐
-                │       MEERKAT INGRESS         │
-                │       (Pre-flight)            │
-                │                               │
-                │  ┌─────────────────────────┐  │
-                │  │  Authentication         │  │  ← Bearer token validation
-                │  │  Rate Limiting          │  │  ← Per-org request quotas
-                │  │  Input Sanitization     │  │  ← XSS / injection cleanup
-                │  └────────────┬────────────┘  │
-                │               │               │
-                │  ┌────────────▼────────────┐  │
-                │  │  /v1/shield             │  │  ← Prompt injection scan
-                │  │  Prompt Injection       │  │  ← Jailbreak detection
-                │  │  Detection              │  │  ← Policy violation check
-                │  └────────────┬────────────┘  │
-                │               │               │
-                │         PASS ─┤─ BLOCK ──────────── 403 + audit log
-                │               │               │
-                └───────────────┼───────────────┘
-                                │
-                           Sanitized
-                            Request
-                                │
-                                ▼
-                ┌──────────────────────────────┐
-                │         AI MODEL              │
-                │                               │
-                │   Claude / GPT / Gemini /     │  ← Meerkat forwards request
-                │   Llama / Any provider        │  ← Model processes normally
-                │                               │  ← Meerkat receives response
-                └───────────────┬───────────────┘
-                                │
-                          Raw AI Response
-                                │
-                                ▼
-                ┌──────────────────────────────┐
-                │       MEERKAT EGRESS          │
-                │       (Verification)          │
-                │                               │
-                │  ┌─────────────────────────┐  │
-                │  │  /v1/verify             │  │
-                │  │                         │  │
-                │  │  ┌───────────────────┐  │  │
-                │  │  │ DeBERTa Entailment│  │  │  ← Claims match source?
-                │  │  ├───────────────────┤  │  │
-                │  │  │ Semantic Entropy  │  │  │  ← Model confident?
-                │  │  ├───────────────────┤  │  │
-                │  │  │ Implicit Pref.    │  │  │  ← Hidden bias?
-                │  │  ├───────────────────┤  │  │
-                │  │  │ Claim Extraction  │  │  │  ← Facts verifiable?
-                │  │  └───────────────────┘  │  │
-                │  └────────────┬────────────┘  │
-                │               │               │
-                └───────────────┼───────────────┘
-                                │
-                                ▼
-                ┌──────────────────────────────┐
-                │     GOVERNANCE SCORE          │
-                │                               │
-                │  Trust Score: 0-100            │
-                │  Status: PASS / FLAG / BLOCK   │
-                │  Flags: [specific issues]      │
-                │  Recommendations: [actions]    │
-                │                               │
-                │  ┌─────────────────────────┐  │
-                │  │  Audit Trail (logged)   │  │  ← Immutable record
-                │  │  audit_id: aud_xxx      │  │  ← Timestamp + full trace
-                │  └─────────────────────────┘  │
-                └───────────────┬───────────────┘
-                                │
-                       Verified Response
-                     + Governance Overlay
-                                │
-                                ▼
-                    ┌──────────────────────┐
-                    │   Client App /       │
-                    │   End User           │
-                    └──────────────────────┘
+                                    CERNER SANDBOX
+                                    (FHIR R4 API)
+                                         |
+                                    Patient Records
+                                    Conditions, Meds,
+                                    Allergies, Vitals
+                                         |
+                                         v
++----------------+              +------------------+
+|                |              |                  |
+|  AI Scribe     |    output    |  Step 1:         |
+|  (GPT-4o /     | ----------> |  EHR-First       |
+|   Claude)      |              |  Verification    |
+|                |              |                  |
++----------------+              +--------+---------+
+                                         |
+                            +------------+------------+
+                            |                         |
+                     VERIFIED (~80%)           UNVERIFIED (~20%)
+                     Low risk, skip SE         Proceed to Step 2
+                            |                         |
+                            |                         v
+                            |            +---------------------+
+                            |            |                     |
+                            |            |  Step 2:            |
+                            |            |  Faithfulness Check  |
+                            |            |  (Claim-level NLI)   |
+                            |            |                     |
+                            |            +----------+----------+
+                            |                       |
+                            |              CONTRADICTED?
+                            |              /         \
+                            |           No            Yes
+                            |            |             |
+                            |            v             v
+                            |     +------------+  +------------------+
+                            |     | Step 3:    |  | CONFIDENT        |
+                            |     | Semantic   |  | HALLUCINATOR     |
+                            |     | Entropy    |  | (low SE + wrong) |
+                            |     +------+-----+  | --> CRITICAL     |
+                            |            |         +------------------+
+                            |            v
+                            |     Entropy Score
+                            |     Low = confident
+                            |     High = uncertain
+                            |            |
+                            +------+-----+
+                                   |
+                                   v
+                        +--------------------+
+                        |                    |
+                        |  Step 4:           |
+                        |  Physician         |
+                        |  Dashboard         |
+                        |  (PowerChart UI)   |
+                        |                    |
+                        |  Trust overlay     |
+                        |  Tiered review     |
+                        |  Time savings      |
+                        |                    |
+                        +--------------------+
 ```
 
-**Decision flow for governance scores:**
+### Meerkat API Pipeline
 
 ```
-Trust Score ≥ auto_approve_threshold (default 85)  →  PASS   (auto-approved)
-Trust Score ≥ auto_block_threshold (default 40)     →  FLAG   (human review required)
-Trust Score < auto_block_threshold                  →  BLOCK  (response withheld)
-```
-
----
-
-## 3. Governance Engine Detail
-
-### a) DeBERTa Entailment — `entailment.py`
-
-**What:** Natural Language Inference (NLI) model that determines whether the AI's output is logically supported by the source documents. This is the primary hallucination detector.
-
-**How it works:**
-
-```
-Input:
-  premise  = source document passage (e.g., contract text)
-  hypothesis = AI's claim (e.g., "Clause 3.2 contains a non-compete")
-
-DeBERTa NLI Model
-       │
-       ▼
-Output:
-  entailment:    0.92  ← claim IS supported by the source
-  contradiction: 0.05  ← claim CONTRADICTS the source
-  neutral:       0.03  ← claim is neither supported nor contradicted
-```
-
-**Scoring:**
-- Each AI output is split into individual claims (see Claim Extraction below)
-- Each claim is evaluated against the most relevant source passage
-- Final entailment score = weighted average across all claims
-- Contradictions trigger immediate flags regardless of overall score
-
-**Demo mode:** Simulated with keyword overlap scoring between output and source context, plus randomized variance. Returns realistic-looking scores without running the actual model.
-
-**Production mode:** `microsoft/deberta-v3-large` fine-tuned on domain-specific NLI data (legal precedent pairs, clinical note/record pairs). Exported to ONNX for CPU inference at ~50ms per claim pair.
-
-```python
-# Core entailment check (simplified)
-async def check_entailment(claim: str, source: str) -> EntailmentResult:
-    inputs = tokenizer(source, claim, return_tensors="np", truncation=True)
-    logits = onnx_session.run(None, dict(inputs))[0]
-    scores = softmax(logits[0])
-    return EntailmentResult(
-        entailment=float(scores[0]),
-        contradiction=float(scores[1]),
-        neutral=float(scores[2]),
-        flags=["entailment_contradiction"] if scores[1] > 0.5 else []
-    )
+Client / AI Agent
+        |
+   API Request
+   (input, output, context, domain)
+        |
+        v
++-------+--------+
+| Authentication  |  API key (Bearer / x-meerkat-key)
+| Rate Limiting   |  or JWT session cookie (MSAL)
++-------+--------+
+        |
+        v
++-------+----------------------------------------+
+|           Governance Checks (parallel)          |
+|                                                 |
+|  +-------------+  +-----------------+           |
+|  | Entailment  |  | Semantic        |           |
+|  | (DeBERTa    |  | Entropy         |           |
+|  |  NLI)       |  | (Farquhar)      |           |
+|  +-------------+  +-----------------+           |
+|                                                 |
+|  +-------------+  +-----------------+           |
+|  | Implicit    |  | Claim           |           |
+|  | Preference  |  | Extraction      |           |
+|  | (bias)      |  | (spaCy + NLI)   |           |
+|  +-------------+  +-----------------+           |
+|                                                 |
++-------------------------------------------------+
+        |
+  Weighted score
+  (entailment 40%, entropy 25%, preference 20%, claims 15%)
+        |
+        v
++------------------+
+| Trust Score 0-100 |
+| PASS / FLAG / BLOCK |
+| Audit ID         |
++------------------+
+        |
+        v
+  PostgreSQL (audit trail)
+  pgvector (knowledge base)
 ```
 
 ---
 
-### b) Semantic Entropy — `entropy.py`
+## 2. Verification Pipeline
 
-**What:** Measures how confident the AI model is in its answer. High entropy = the model would give different answers if asked again = low confidence = unreliable.
+### Layer 1: Ground Truth Verification
 
-**How it works:**
+**TRUST (healthcare):** Connects to Cerner Sandbox via FHIR R4 REST API. Retrieves patient data (Condition, MedicationRequest, AllergyIntolerance, DocumentReference) and compares AI-generated claims against EMR records.
 
-```
-Step 1: Request N completions (default N=5) for the same prompt
-        with temperature > 0
+**Meerkat API (multi-domain):** Uses the entailment check. Takes the AI output and the source context provided by the caller. Runs natural language inference to determine if the output is entailed by, neutral to, or contradicts the source.
 
-Step 2: Embed each completion using sentence-transformers
+- Model: DeBERTa-v3 (NLI fine-tuned)
+- Input: (premise=source context, hypothesis=AI claim)
+- Output: entailment/contradiction/neutral probabilities
+- Flags: `entailment_contradiction` if contradiction > 0.5, `low_entailment` if entailment < 0.5
+- Score: 0.0-1.0, weighted at 40% of composite
 
-Step 3: Cluster completions by semantic similarity
-        (not lexical — "the clause is void" ≈ "this section is invalid")
+When the microservices are not available, the Node.js API falls back to a heuristic entailment check based on token overlap between output and context.
 
-Step 4: Entropy = distribution spread across clusters
-        ┌─────────────────────────────────────────────┐
-        │ Low entropy (good):    ████████████          │
-        │ All 5 responses say roughly the same thing   │
-        │                                              │
-        │ High entropy (bad):    ██ ██ █ ███ ██        │
-        │ Responses diverge — model is uncertain       │
-        └─────────────────────────────────────────────┘
-```
+### Layer 2: Semantic Entropy
 
-**Scoring:**
-- Entropy score 0.0-1.0 (lower is better)
-- Threshold configurable per domain (legal defaults to 0.3, healthcare to 0.2)
-- Scores above threshold trigger `moderate_uncertainty` or `high_uncertainty` flags
+Implements Farquhar et al. (2024) to measure model confidence:
 
-**Demo mode:** Simulated entropy calculated from response length, keyword density, and domain heuristics. Longer, more hedging responses ("may", "could", "possibly") produce higher simulated entropy.
+1. **Sample N completions** (default N=5) from the AI model at temperature > 0. Each sample answers the same prompt independently.
 
-**Production mode:** Makes N parallel API calls to the underlying model, embeds with `all-MiniLM-L6-v2`, clusters with agglomerative clustering at cosine distance threshold 0.3, computes discrete entropy over cluster distribution.
+2. **Pairwise bidirectional entailment check.** For each pair of responses (A, B), check whether A entails B AND B entails A using DeBERTa-large-MNLI. If both directions hold, the responses are semantically equivalent (they say the same thing in different words).
 
-```python
-async def check_entropy(prompt: str, model_config: ModelConfig, n: int = 5) -> EntropyResult:
-    # Sample N completions
-    completions = await asyncio.gather(*[
-        call_model(prompt, model_config, temperature=0.7) for _ in range(n)
-    ])
+3. **Cluster into semantic equivalence classes** using union-find. If response 1 is equivalent to response 2, and response 2 is equivalent to response 3, then all three are in the same cluster. This is transitive closure over bidirectional entailment.
 
-    # Embed and cluster
-    embeddings = encoder.encode(completions)
-    clusters = cluster_by_similarity(embeddings, threshold=0.3)
+4. **Compute Shannon entropy** over the cluster distribution:
 
-    # Compute entropy over cluster distribution
-    distribution = [len(c) / n for c in clusters]
-    entropy = -sum(p * math.log2(p) for p in distribution if p > 0)
-    normalized = entropy / math.log2(n)  # normalize to 0-1
+   ```
+   SE = -sum(p_i * log2(p_i))  for each cluster i
+   where p_i = (number of responses in cluster i) / N
+   ```
 
-    return EntropyResult(
-        score=normalized,
-        num_clusters=len(clusters),
-        flags=["high_uncertainty"] if normalized > 0.6 else
-              ["moderate_uncertainty"] if normalized > 0.3 else []
-    )
-```
+5. **Normalize to 0-1** by dividing by log2(N). A score of 0 means all responses fell into a single cluster (the model is certain). A score of 1 means every response is in its own cluster (maximum uncertainty).
 
----
+- Flags: `high_uncertainty` if normalized SE > 0.6, `moderate_uncertainty` if > 0.3
+- Score: inverted (1 - normalized_SE) so higher = better
+- Weight: 25% of composite
 
-### c) Implicit Preference — `preference.py`
+**Implementation:** `meerkat-semantic-entropy/` microservice (FastAPI + Python). The TRUST platform has a parallel implementation in `ml-service/app/semantic_entropy.py` that uses the Hugging Face Inference API for entailment.
 
-**What:** Detects hidden directional bias in AI recommendations. Does the model favor one side of a negotiation? Does it consistently recommend one treatment over another without clinical basis?
+### Layer 3: Claim Extraction and Verification
 
-**How it works:**
+Three-step pipeline implemented in `meerkat-claim-extractor/`:
 
-```
-Step 1: Take the original prompt and construct a "mirror" prompt
-        that frames the same question from the opposite perspective
+1. **Claim extraction** using spaCy `en_core_web_trf` (transformer-based NER). Extracts factual assertions from the AI output by identifying sentences containing named entities, quantities, dates, and other verifiable content.
 
-        Original:  "Should the tenant accept this lease clause?"
-        Mirror:    "Should the landlord insist on this lease clause?"
+2. **Claim verification** via DeBERTa entailment. Each extracted claim is checked against the source context using NLI. Claims are classified as:
+   - Verified: entailment score > 0.7
+   - Contradicted: contradiction score > 0.5
+   - Unverified: neither threshold met
 
-Step 2: Send both to the AI model
+3. **Entity cross-reference** for hallucination detection. Named entities (people, organizations, locations) mentioned in the AI output are checked against entities in the source context. Entities that appear in the output but not in the source are flagged as potentially hallucinated.
 
-Step 3: Compare response embeddings using cosine similarity
+- Flags: `unverified_claims`, `majority_unverified`
+- Score: proportion of verified claims
+- Weight: 15% of composite
 
-Step 4: High divergence = the model's answer depends heavily on
-        framing = implicit preference detected
+### Layer 4: Implicit Preference Detection
 
-        ┌──────────────────────────────────────────┐
-        │ Similarity > 0.85  →  No bias detected   │
-        │ Similarity 0.6-0.85 → Mild preference     │
-        │ Similarity < 0.6   →  Strong bias flagged │
-        └──────────────────────────────────────────┘
-```
+Detects hidden directional bias in AI recommendations. Implemented in `meerkat-implicit-preference/`:
 
-**Scoring:**
-- Preference score 0.0-1.0 (higher is better — high means balanced)
-- Domain-specific mirror prompt templates (legal: tenant/landlord, financial: buy/sell, healthcare: treatment A/B)
+- **Sentiment analysis:** DistilBERT fine-tuned on SST-2. Measures overall sentiment polarity of the response. Strongly positive or negative sentiment in contexts that should be neutral triggers a flag.
 
-**Demo mode:** Simulated bias score based on sentiment polarity analysis of the response. Strongly positive or negative sentiment in recommendations produces lower scores.
+- **Domain-specific keyword scoring:** Analyzes the response for directional language patterns specific to each domain (legal: plaintiff/defendant bias, financial: buy/sell bias, healthcare: treatment preference).
 
-**Production mode:** Automated dual-prompt generation using domain templates, parallel model calls, `all-MiniLM-L6-v2` embedding, cosine similarity comparison.
+- Combined scoring: sentiment (30%), keyword direction (40%), domain context (30%).
 
-```python
-async def check_preference(
-    prompt: str, output: str, domain: str, model_config: ModelConfig
-) -> PreferenceResult:
-    mirror = generate_mirror_prompt(prompt, domain)
-
-    original_response, mirror_response = await asyncio.gather(
-        call_model(prompt, model_config, temperature=0.0),
-        call_model(mirror, model_config, temperature=0.0)
-    )
-
-    emb_orig = encoder.encode([original_response])
-    emb_mirror = encoder.encode([mirror_response])
-    similarity = cosine_similarity(emb_orig, emb_mirror)[0][0]
-
-    return PreferenceResult(
-        score=float(similarity),
-        flags=["strong_bias"] if similarity < 0.6 else
-              ["mild_preference"] if similarity < 0.85 else []
-    )
-```
+- Flags: `strong_bias` if score < 0.4, `mild_preference` if score < 0.7
+- Weight: 20% of composite
+- Status: in development
 
 ---
 
-### d) Claim Extraction — `claims.py`
+## 3. Data Flow
 
-**What:** Extracts specific factual assertions from the AI's output and classifies each as verified, unverified, or contradicted against the source context.
-
-**How it works:**
+### Verification Request
 
 ```
-AI Output: "The NDA includes a 2-year non-compete clause covering
-            all of North America, with a $50,000 penalty for breach."
+1. Client sends POST /v1/verify
+   {
+     input:    "What does Section 12 say about termination?",
+     output:   "The contract allows termination with 90 days notice.",
+     context:  "Section 12.1: Either party may terminate with 30 days written notice.",
+     domain:   "legal",
+     agent_name: "contract-reviewer"
+   }
 
-Extracted Claims:
-  ┌────┬──────────────────────────────────────┬──────────────┐
-  │ #  │ Claim                                │ Status       │
-  ├────┼──────────────────────────────────────┼──────────────┤
-  │ 1  │ NDA includes a non-compete clause    │ VERIFIED      │
-  │ 2  │ Non-compete duration is 2 years      │ VERIFIED      │
-  │ 3  │ Coverage is all of North America     │ CONTRADICTED  │
-  │ 4  │ Penalty for breach is $50,000        │ UNVERIFIED    │
-  └────┴──────────────────────────────────────┴──────────────┘
+2. Authentication middleware validates API key or JWT session cookie.
+   Sets org context (orgId, plan, domain).
 
-  Source says: "...non-compete limited to British Columbia..."
-  → Claim 3 contradicts the source document
-  → Claim 4 has no corresponding source passage
-```
+3. Verification limit check (Starter plan: 1000/month).
 
-**Scoring:**
-- Returns total claims, verified count, unverified count, contradicted count
-- Any contradicted claim triggers `claim_contradiction` flag
-- Unverified claims trigger `unverified_claim` flag if count exceeds threshold
+4. Load org configuration (thresholds, required checks, knowledge base settings).
 
-**Demo mode:** Regex-based claim extraction targeting patterns like numbers, durations, named entities, and monetary values. Mock verification using keyword search against source context.
+5. If knowledge base is enabled, run semantic search against org's indexed
+   documents via pgvector. Append matching chunks to the verification context.
 
-**Production mode:** Fine-tuned claim extraction model (based on T5-small) for structured claim parsing, followed by per-claim entailment verification against source using the DeBERTa engine from check (a).
+6. Run governance checks (parallel where possible):
+   - entailment_check(output, context)          --> score, flags
+   - semantic_entropy_check(input, output)      --> score, flags
+   - implicit_preference_check(output, domain)  --> score, flags
+   - claim_extraction_check(output, context)    --> score, flags, claims
 
-```python
-async def extract_and_verify(
-    output: str, context: str
-) -> ClaimsResult:
-    claims = claim_extractor.extract(output)  # list of claim strings
-    results = []
+7. Compute weighted trust score (0-100).
+   Apply org thresholds:
+     >= auto_approve_threshold (default 85) --> PASS
+     >= auto_block_threshold (default 40)   --> FLAG (human review)
+     < auto_block_threshold                 --> BLOCK
 
-    for claim in claims:
-        entailment = await check_entailment(claim, context)
-        if entailment.contradiction > 0.5:
-            status = "contradicted"
-        elif entailment.entailment > 0.7:
-            status = "verified"
-        else:
-            status = "unverified"
-        results.append(ClaimResult(text=claim, status=status))
+8. Persist verification record to PostgreSQL:
+   - audit_id (unique, format: aud_YYYYMMDD_hexhash)
+   - Full check results, flags, trust score, status
+   - Input/output text, source context
+   - Agent name, model used, domain
 
-    contradicted = sum(1 for r in results if r.status == "contradicted")
-    unverified = sum(1 for r in results if r.status == "unverified")
+9. Increment org verification counter.
 
-    return ClaimsResult(
-        claims=len(results),
-        verified=len(results) - contradicted - unverified,
-        unverified=unverified,
-        contradicted=contradicted,
-        details=results,
-        flags=(["claim_contradiction"] if contradicted > 0 else []) +
-              (["unverified_claim"] if unverified > 2 else [])
-    )
-```
-
----
-
-## 4. Data Models
-
-All request/response schemas use Pydantic v2 with strict validation.
-
-### VerifyRequest / VerifyResponse
-
-```python
-class VerifyRequest(BaseModel):
-    input: str                                    # What the user asked
-    output: str                                   # What the AI responded
-    context: str | None = None                    # Source document for entailment
-    checks: list[GovernanceCheck] = [             # Which checks to run
-        "entailment", "semantic_entropy",
-        "implicit_preference", "claim_extraction"
-    ]
-    domain: Domain                                # "legal" | "financial" | "healthcare"
-    config_id: str | None = None                  # Org-specific config override
-    model: str | None = None                      # Model that generated the output
-    metadata: dict | None = None                  # Passthrough metadata
-
-class VerifyResponse(BaseModel):
-    trust_score: int                              # 0-100 composite score
-    status: Literal["PASS", "FLAG", "BLOCK"]      # Governance decision
-    checks: dict[str, CheckResult]                # Per-check results
-    audit_id: str                                 # Unique audit trail reference
-    recommendations: list[str]                    # Human-readable action items
-    latency_ms: int                               # Total verification time
-```
-
-### ShieldRequest / ShieldResponse
-
-```python
-class ShieldRequest(BaseModel):
-    input: str                                    # Raw user input to scan
-    domain: Domain                                # Domain context
-    sensitivity: Literal["low", "medium", "high"] = "medium"
-
-class ShieldResponse(BaseModel):
-    safe: bool                                    # Pass/fail
-    threat_level: Literal["NONE", "LOW", "MEDIUM", "HIGH"]
-    attack_type: str | None = None                # "direct_injection", "jailbreak", etc.
-    detail: str                                   # Human-readable explanation
-    action: Literal["ALLOW", "SANITIZE", "BLOCK"]
-    sanitized_input: str | None = None            # Cleaned version (if SANITIZE)
-```
-
-### AuditRecord
-
-```python
-class AuditRecord(BaseModel):
-    audit_id: str                                 # aud_{timestamp}_{hash}
-    timestamp: datetime                           # UTC
-    request_hash: str                             # SHA-256 of input (no raw text stored)
-    user: str | None = None                       # Authenticated user ID
-    domain: Domain
-    model_used: str | None = None
-    plugin: str | None = None                     # Cowork plugin identifier
-    trust_score: int
-    status: Literal["PASS", "FLAG", "BLOCK"]
-    checks_run: list[str]
-    check_results: dict[str, CheckResult]         # Full check details
-    flags_raised: int
-    recommendations: list[str]
-    human_review_required: bool
-    latency_ms: int
-    config_id: str | None = None                  # Which config was active
-```
-
-### GovernanceConfig
-
-```python
-class GovernanceConfig(BaseModel):
-    org_id: str
-    domain: Domain
-    config: ConfigRules
-
-class ConfigRules(BaseModel):
-    auto_approve_threshold: int = 85              # Score >= this → auto PASS
-    auto_block_threshold: int = 40                # Score < this → auto BLOCK
-    required_checks: list[GovernanceCheck]         # Must run on every request
-    optional_checks: list[GovernanceCheck] = []    # Run if requested
-    domain_rules: dict = {}                       # Domain-specific overrides
-    alerts: AlertConfig | None = None             # Notification preferences
-```
-
-### DashboardMetrics
-
-```python
-class DashboardMetrics(BaseModel):
-    period: str                                   # "2026-01-31 to 2026-02-07"
-    total_verifications: int
-    avg_trust_score: float
-    auto_approved: int
-    flagged_for_review: int
-    auto_blocked: int
-    injection_attempts_blocked: int
-    top_flags: list[FlagCount]                    # Sorted by frequency
-    compliance_score: float                       # % of requests that passed
-    trend: Literal["improving", "stable", "declining"]
-```
-
----
-
-## 5. MCP Integration
-
-Meerkat implements the **Model Context Protocol (MCP)** server specification, allowing any Anthropic Cowork plugin to add governance with zero code changes.
-
-### How it works
-
-```
-┌──────────────────────────────────────────────────────┐
-│  Cowork Plugin (e.g., Legal Review)                  │
-│                                                       │
-│  mcp_servers config:                                 │
-│  {                                                    │
-│    "meerkat-governance": {                            │
-│      "url": "https://api.meerkat.ai/mcp",            │
-│      "api_key": "mk_live_xxx",                       │
-│      "mode": "intercept"                              │
-│    }                                                  │
-│  }                                                    │
-│                                                       │
-│  Plugin calls: /review-contract                       │
-│       │                                               │
-│       ▼                                               │
-│  MCP routes through Meerkat before/after AI call      │
-└──────────────────────────────────────────────────────┘
-```
-
-### Two operating modes
-
-| Mode | Behavior | Use Case |
-|------|----------|----------|
-| **Intercept** | Meerkat sits in the request/response path. Low-scoring responses are flagged or blocked before reaching the user. | Production — regulated environments where governance is mandatory |
-| **Advisory** | Meerkat runs in parallel. The user gets the AI response immediately, plus a governance overlay with scores and warnings. Nothing is blocked. | Testing, evaluation, low-risk domains where governance is informational |
-
-### MCP server capabilities exposed
-
-```python
-MCP_TOOLS = [
+10. Return response:
     {
-        "name": "meerkat_verify",
-        "description": "Verify an AI response against source documents",
-        "input_schema": VerifyRequest.model_json_schema()
-    },
-    {
-        "name": "meerkat_shield",
-        "description": "Scan user input for prompt injection attacks",
-        "input_schema": ShieldRequest.model_json_schema()
-    },
-    {
-        "name": "meerkat_audit",
-        "description": "Retrieve audit trail for a past verification",
-        "input_schema": {"type": "object", "properties": {"audit_id": {"type": "string"}}}
+      trust_score: 32,
+      status: "BLOCK",
+      checks: { entailment: {...}, semantic_entropy: {...}, ... },
+      audit_id: "aud_20260208_a1b2c3d4",
+      recommendations: ["Review AI output against source -- contradictions detected."]
     }
-]
+```
+
+### TRUST Healthcare Data Flow
+
+```
+1. AI Scribe generates clinical note from patient encounter.
+
+2. TRUST backend receives the note via API.
+
+3. EHR-first verification:
+   a. Extract claims from the AI note (medications, diagnoses, vitals, procedures).
+   b. Query Cerner FHIR API for patient records:
+      GET /Patient/{id}
+      GET /Condition?patient={id}
+      GET /MedicationRequest?patient={id}
+      GET /AllergyIntolerance?patient={id}
+   c. Compare each claim against FHIR data.
+   d. ~80% of claims verify directly against EMR. These are marked LOW risk.
+
+4. Remaining ~20% unverified claims proceed to ML service:
+   a. Semantic entropy analysis (5 samples, bidirectional entailment clustering).
+   b. Cross-reference with hallucination detection matrix:
+
+      +------------------+------------------+-------------------+
+      |                  | EHR: VERIFIED    | EHR: CONTRADICTS  |
+      +------------------+------------------+-------------------+
+      | High Entropy     | REVIEW NEEDED    | LIKELY ERROR      |
+      | (uncertain)      | (medium risk)    | (high risk)       |
+      +------------------+------------------+-------------------+
+      | Low Entropy      | LIKELY CORRECT   | CONFIDENT         |
+      | (confident)      | (low risk)       | HALLUCINATOR      |
+      |                  |                  | (critical risk)   |
+      +------------------+------------------+-------------------+
+
+5. Results surface in PowerChart dashboard:
+   - Per-claim verification status (verified / contradicted / unverified)
+   - Risk level badges (LOW / MEDIUM / HIGH / CRITICAL)
+   - Recommended review tier (Brief / Standard / Detailed)
+   - Time saved vs. manual chart review
 ```
 
 ---
 
-## 6. Demo vs. Production
+## 4. Infrastructure
 
-Transparency on what's real and what's simulated:
+### Currently Deployed (TRUST Healthcare)
 
-| Component | Demo (Phase 1) | Production (Phase 2+) |
-|-----------|---------------|----------------------|
-| **API endpoints** | Fully functional FastAPI server | Same — no changes needed |
-| **Authentication** | Static API keys | Azure AD / JWT with RBAC |
-| **Rate limiting** | In-memory counter | Redis-backed sliding window |
-| **Prompt injection shield** | Keyword pattern matching + regex | Fine-tuned classifier (distilbert) |
-| **DeBERTa entailment** | Keyword overlap scoring + randomized variance | `deberta-v3-large` ONNX inference |
-| **Semantic entropy** | Heuristic based on response length + hedge words | Multi-sample API calls + embedding clustering |
-| **Implicit preference** | Sentiment polarity approximation | Dual-prompt + cosine similarity |
-| **Claim extraction** | Regex pattern matching (numbers, entities, dates) | Fine-tuned T5-small extraction model |
-| **Claim verification** | Keyword search against source context | Per-claim DeBERTa entailment |
-| **Trust score** | Weighted average of simulated check scores | Weighted average of real check scores |
-| **Audit trail** | In-memory dict (lost on restart) | DynamoDB / PostgreSQL with encryption |
-| **Dashboard data** | Seeded sample data | Live aggregation from audit store |
-| **MCP server** | Full MCP protocol server (FastMCP + httpx) | Same -- production-ready |
-| **Latency** | ~50ms (no real inference) | ~200-400ms (ONNX inference) |
+| Resource | Type | Purpose |
+|----------|------|---------|
+| `trust-api-phc` | Azure App Service (P1V2) | FastAPI backend |
+| `trust-ml-service` | Azure App Service (P1V2) | ML microservice (entropy, hallucination) |
+| `meerkat-smoke-wzrd` | Azure App Service (P1V2) | BC Wildfire governance agent |
+| `jean.raubenheimer_asp_5377` | App Service Plan | Shared plan, 1 vCPU, 3.5GB RAM |
+| `trust-postgres-1764041748` | PostgreSQL Flexible Server | Database: `trust_governance` |
+| `trust-dashboard-swa` | Static Web App | React frontend |
+| `trust-prod-kv` | Key Vault | API keys, DB credentials, tokens |
 
-**The API contract is identical between demo and production.** A client integrated against the demo API will work without changes when pointed at production. Only the quality of governance scores improves.
+Region: Canada Central. CI/CD via GitHub Actions with path-filtered deploys. No ARM/Bicep/Terraform templates exist; deployments use Azure CLI and GitHub Actions publish profiles.
 
----
+<!-- NOTE: Infrastructure-as-Code is planned but not yet implemented.
+     Current deployments are configured via Azure Portal and GitHub Actions. -->
 
-## 7. Tier 2 -- Metacognitive Engine
+### Meerkat API (Development)
 
-The governance checks in Section 3 (entailment, entropy, preference, claims) form **Tier 1** -- fast, deterministic or semi-deterministic checks that catch obvious problems. Think of Tier 1 as the security camera.
+The Node.js API runs locally against a PostgreSQL instance with pgvector. The three Python microservices each run as standalone FastAPI servers. Docker support exists for the Python demo API and microservices (`Dockerfile` per service, `docker-compose.yml` at root).
 
-Tier 2 is the detective who reviews the footage.
+Production deployment target: Azure App Service or Azure Container Apps. Not yet deployed.
 
-### Two-tier architecture
+### Database Schema (Meerkat API)
 
-| Tier | Role | Speed | What it catches |
-|------|------|-------|-----------------|
-| **Tier 1** | Deterministic checks | ~50-400ms | Wrong numbers, contradicted facts, hedged language, overt bias |
-| **Tier 2** | Metacognitive reasoning | ~500-1000ms | Plausible-but-wrong reasoning, subtle bias, domain-specific red flags |
+PostgreSQL with pgvector extension. Key models:
 
-Tier 1 produces a **signal vector** -- four scores plus extracted claims. Tier 2 takes this signal vector as input, along with the original claim, source context, and domain, and evaluates whether the combination of signals indicates a real problem or a false alarm.
-
-```
-Tier 1: Parallel Verification
-  Entailment --> [score]
-  Entropy    --> [score]    --> Combined signal vector
-  Preference --> [score]
-  Claims     --> [score]
-                  |
-                  v
-Tier 2: Meta-Classifier (Fine-tuned LLM)
-  Input: claim + context + domain + Tier 1 signals
-  Output: risk_score, classification, reasoning, attention_cues
-                  |
-                  v
-Conformal Prediction Calibration
-  Converts risk_score into calibrated prediction sets
-  Guarantees: "90% of flagged items contain actual errors"
-  Mathematical coverage contracts, not heuristics
-                  |
-                  v
-  AUTO-APPROVE (target 95%)  |  HUMAN REVIEW (target 5%)
-```
-
-### Why a meta-classifier, not just weighted averages
-
-The current Tier 1 scoring uses static weights (entailment 40%, entropy 25%, preference 20%, claims 15%). This works for obvious cases but fails when:
-
-- Entailment scores high but the reasoning chain is flawed
-- Entropy is low (the model sounds confident) but the confidence is misplaced
-- A claim is technically accurate but misleading in context
-- Domain-specific patterns make a generic red flag actually benign
-
-The meta-classifier **learns** these patterns from labeled data. It sees thousands of examples where Tier 1 scored X but the actual verdict was Y, and learns the decision boundary that static weights cannot capture.
-
-### Conformal prediction calibration
-
-Traditional classifiers output a point estimate: "this is 82% likely to be correct." Conformal prediction converts this into a **prediction set** with mathematical coverage guarantees:
-
-- "With 90% confidence, this response is in the set {PASS}" -- auto-approve
-- "With 90% confidence, this response is in the set {PASS, FLAG}" -- human review needed
-- "With 90% confidence, this response is in the set {BLOCK}" -- auto-block
-
-The key property: **the 90% guarantee holds regardless of the underlying data distribution.** This is not a heuristic -- it is a mathematical contract. If Meerkat says "90% of flagged items contain actual errors," that statement is provably true over any future data.
-
-### Domain adaptation via LoRA
-
-The meta-classifier uses a single base model (**Llama 3 8B**) with domain-specific **LoRA adapters** (Low-Rank Adaptation). Each adapter is a small set of weights (~50MB) that specializes the base model for a specific domain without modifying the base weights.
-
-**Healthcare meta-classifier:**
-- Trained on: clinical notes, EHR data, medication interaction patterns
-- Learns: "Metformin in medication list + diabetes NOT in problem list = documentation gap, not hallucination"
-- Training data: clinical encounters + synthetic hallucination injection
-
-**Legal meta-classifier:**
-- Trained on: contract reviews, clause analysis, jurisdictional reasoning
-- Learns: "Non-compete flagged but standard in this jurisdiction = low risk" vs. "Non-compete contradicts governing law = high risk"
-
-**Financial meta-classifier:**
-- Trained on: investment analyses, risk assessments, regulatory filings
-- Learns: "Revenue projection differs from SEC filing = high risk" vs. "Rounding difference in quarterly summary = low risk"
-
-**Key insight:** Same base model. Same architecture. Different LoRA adapters per domain. Train once per domain, deploy everywhere in that domain. The adapters are the proprietary IP -- small enough to distribute, powerful enough to differentiate.
+- **Organization** -- multi-tenant org with plan (starter/professional/enterprise), domain, Stripe billing fields
+- **User** -- Azure AD users with `microsoft_oid`, linked to org
+- **ApiKey** -- SHA-256 hashed keys with prefix, status, last-used tracking
+- **Configuration** -- per-org governance rules (thresholds, required checks, knowledge base settings)
+- **Verification** -- audit trail for every verification (trust score, status, full check results, flags)
+- **ThreatLog** -- prompt injection / jailbreak attempts
+- **KnowledgeBase / Document / Chunk** -- RAG system with `vector(1536)` embeddings for semantic search
 
 ---
 
-## 8. Multi-Agent Team Governance
-
-2026 is the year of multi-agent systems. Gartner reports a 1,445% surge in multi-agent inquiries. By end of 2026, 40% of enterprise applications will embed task-specific AI agents. But trust in autonomous agents is **falling** -- executive confidence dropped from 43% in 2024 to 22% in 2025.
-
-The reason: single-agent governance is not enough.
-
-### The problem: errors compound across agent teams
-
-Single-agent governance (what exists today):
-
-```
-User --> Agent --> Verify output --> User
-
-Simple. One agent, one check.
-```
-
-Multi-agent team governance (what is actually needed):
-
-```
-User --> Orchestrator Agent
-              |
-         +---------+---------+
-         |         |         |
-      Agent A   Agent B   Agent C
-      (Research) (Analyze) (Draft)
-```
-
-Each agent can hallucinate. Each handoff between agents can corrupt information. The orchestrator can make bad coordination decisions. Verifying only the final output misses where errors actually originated.
-
-**Example:** Agent B hallucinates a contract clause analysis. Agent C "cleans it up" to look plausible. The final output reads correctly but is built on a rotten foundation. Single-agent governance on the final output would miss this entirely.
-
-### Meerkat's approach: governance at every layer
-
-```
-User --> Orchestrator Agent
-              |
-         +---------+---------+
-         |         |         |
-      Agent A   Agent B   Agent C
-         |         |         |
-      Meerkat   Meerkat   Meerkat   <-- verify EACH agent
-         |         |         |
-         +---------+---------+
-              |
-         Orchestrator assembles
-              |
-           Meerkat              <-- verify the assembly
-              |
-         User receives verified output
-```
-
-### Three levels of multi-agent governance
-
-**Level 1 -- Agent-Level Verification:**
-Each individual agent's output is verified independently. Uses the existing `/v1/verify` endpoint per agent. Catches hallucinations at the source before they propagate to downstream agents.
-
-**Level 2 -- Handoff Verification:**
-When Agent A passes context to Agent B, Meerkat verifies the handoff. Did Agent B receive what Agent A actually said? Did context get lost or distorted in translation? New endpoint concept: `POST /v1/verify-handoff`.
-
-**Level 3 -- Assembly Verification:**
-The orchestrator's final assembled output is verified against ALL individual agent outputs. Does the whole equal the sum of its parts? Did the orchestrator introduce errors during assembly? The Tier 2 metacognitive engine is essential here -- it understands reasoning chains across agents, not just individual outputs.
-
-### Protocol support
-
-| Protocol | Integration |
-|----------|------------|
-| **MCP (Anthropic)** | Meerkat already implements MCP. Each agent tool call can route through Meerkat verification. |
-| **A2A (Google Agent-to-Agent Protocol)** | Meerkat can sit on agent-to-agent communication channels, verifying messages between agents as they collaborate. |
-| **CrewAI** | Middleware hooks intercept agent communications within CrewAI workflows. |
-| **LangGraph** | Node-level verification at each step in the LangGraph execution graph. |
-| **AutoGen** | Message-level governance on the AutoGen conversation bus between agents. |
-
-### Multi-agent audit trail
-
-For a single agent, the audit trail is linear. For agent teams, the audit trail is a **graph**:
-
-```json
-{
-  "audit_id": "aud_team_001",
-  "agents": [
-    { "agent": "researcher", "audit": "aud_001", "score": 91 },
-    { "agent": "analyst",    "audit": "aud_002", "score": 73 },
-    { "agent": "drafter",    "audit": "aud_003", "score": 88 }
-  ],
-  "handoffs": [
-    { "from": "researcher", "to": "analyst", "verified": true },
-    { "from": "analyst",    "to": "drafter", "verified": true }
-  ],
-  "assembly": { "audit": "aud_004", "score": 82 },
-  "team_trust_score": 78,
-  "weakest_link": "analyst",
-  "recommendation": "Analyst output on clause 7.2 needs human review"
-}
-```
-
-This graph-based audit trail lets compliance officers see exactly **where** in the agent team a problem originated, not just that the final output had an issue. The `weakest_link` field immediately identifies the agent responsible, and the per-handoff verification shows whether the error was introduced or inherited.
-
----
-
-## 9. Federated Learning Network
-
-### The problem with static governance
-
-AI agents are getting smarter. GPT-5, Claude 5, and their successors will produce fewer obvious errors (wrong numbers, contradicted facts) and more subtle ones (plausible but flawed reasoning, technically correct but misleading conclusions). Static governance checks -- even good ones -- will fall behind.
-
-Any governance system that does not learn is a depreciating asset.
-
-### The solution: fleet-wide learning without data sharing
-
-Every Meerkat deployment generates governance signals: what was flagged, what humans overrode, what was missed, what new attack patterns appeared. Federated learning aggregates **patterns** (model weight updates) across the entire Meerkat fleet **without sharing raw data**.
-
-```
-  Hospital A        Law Firm B        Bank C
-  (Toronto)         (Vancouver)       (Calgary)
-      |                 |                |
-      v                 v                v
-  Local Meerkat     Local Meerkat    Local Meerkat
-  + Domain LoRA     + Domain LoRA    + Domain LoRA
-      |                 |                |
-      +--------+--------+--------+------+
-               |
-               v
-      Federated Aggregation Server
-      (weights only, never raw data)
-               |
-               v
-      Updated Global Model Weights
-               |
-      +--------+--------+--------+------+
-      |                 |                |
-      v                 v                v
-  Hospital A        Law Firm B        Bank C
-  (smarter)         (smarter)         (smarter)
-```
-
-How it works:
-
-1. A hospital in Toronto catches a new hallucination pattern in clinical notes
-2. The local Meerkat instance records the pattern as a training signal
-3. Federated learning encodes this pattern into **weight updates** (not raw data)
-4. Weight updates are aggregated on the central server with updates from all other deployments
-5. Updated global weights are pushed to every Meerkat instance
-6. The law firm in Vancouver now catches the same **class** of reasoning error -- even though the domain is different
-
-The fleet gets smarter together. Every new deployment makes every existing deployment more accurate.
-
-### Technical details
-
-| Parameter | Value |
-|-----------|-------|
-| **Aggregation method** | Federated Averaging (FedAvg) or FedProx for heterogeneous data distributions |
-| **Communication** | Encrypted weight deltas only -- raw data never leaves the client's network |
-| **Update cadence** | Daily signal collection, weekly model weight aggregation |
-| **Privacy** | Differential privacy applied to weight updates (epsilon-delta guarantees) |
-| **Rollback** | Model versioning with automated rollback if accuracy degrades post-update |
-| **Cross-domain learning** | Reasoning patterns transfer across domains -- "confident but wrong" patterns are universal |
-
-### Why this is the moat
-
-- **Network effect:** Every customer makes the product better for every other customer
-- **Data advantage:** Competitors would need equivalent fleet diversity to match accuracy
-- **Compounding:** The system improves weekly. A competitor starting today is not 6 months behind -- they are permanently behind a moving target
-- **Privacy-preserving:** Clients in regulated industries (healthcare, finance, legal) can participate without exposing sensitive data
-- **Scale advantage:** The 1,000th client gets governance that is 1,000x more battle-tested than what the 1st client got. This network effect cannot be replicated without equivalent fleet scale.
-
----
-
-## 10. Self-Governance
-
-Meerkat uses its own API to govern any internal AI agents. This serves three purposes:
-
-1. **Proof of trust** -- We use what we sell. If Meerkat governance is not good enough for our own AI operations, it is not good enough for customers.
-
-2. **Continuous testing** -- Production traffic validates the governance engine 24/7. Every internal AI call is a live test of the system under real conditions.
-
-3. **Transparency** -- Our own governance scores are visible. Customers can inspect how Meerkat governs itself.
-
-### Who watches the watchmen
-
-This is the first question any serious buyer asks. The answer is layered:
-
-| Layer | Defense | Why it works |
-|-------|---------|--------------|
-| **Tier 1 checks** | Deterministic measurement instruments, not generative AI | An entailment score is a calculation, not an opinion. It cannot hallucinate. |
-| **Tier 2 meta-classifier** | Validated against benchmark datasets with known ground truth | Sensitivity and specificity measured on held-out test sets. Published metrics. |
-| **Conformal prediction** | Mathematical coverage guarantees | The 90% coverage contract is provably correct -- it is a theorem, not a claim. |
-| **Human review layer** | Edge cases routed to domain experts | The 5% human review target ensures humans stay in the loop for ambiguous cases. |
-| **Published metrics** | Sensitivity, specificity, AUROC, calibration curves | Open measurement. If governance accuracy degrades, the numbers show it. |
-| **Fleet validation** | Federated network provides continuous cross-validation | Hundreds of deployments validating the same model weights across diverse domains. |
-
-The fundamental insight: governance infrastructure does not need to be perfect. It needs to be **measurably better than the alternative** (which today is nothing). And it needs to **prove** that it is better, with numbers, not claims.
-
----
-
-## 11. Training Signal Collection
-
-The current demo API already collects the data needed for future federated learning. Every `/v1/verify` call generates a **training signal**:
-
-```json
-{
-  "input_hash": "sha256_a1b2c3...",
-  "domain": "legal",
-  "tier1_scores": {
-    "entailment": 0.92,
-    "entropy": 0.15,
-    "preference": 0.88,
-    "claims_verified": 6,
-    "claims_unverified": 1
-  },
-  "tier1_trust_score": 87,
-  "tier2_risk_score": null,
-  "human_override": null,
-  "final_verdict": "PASS",
-  "agent_team_context": {
-    "is_team": false,
-    "agent_role": null,
-    "handoff_from": null
-  },
-  "timestamp": "2026-02-07T14:30:00Z"
-}
-```
-
-| Field | Purpose |
-|-------|---------|
-| `input_hash` | Privacy-preserving identifier. SHA-256 hash, not raw text. Allows deduplication without exposing content. |
-| `tier1_scores` | The full Tier 1 signal vector. This becomes the feature set for Tier 2 training. |
-| `tier1_trust_score` | The current weighted-average score. Useful for measuring how Tier 2 improves over Tier 1 baselines. |
-| `tier2_risk_score` | Null until Tier 2 is deployed. Once active, captures the meta-classifier's output for further training. |
-| `human_override` | Filled when a human reviewer changes the automated verdict. These are the highest-value training examples -- they represent cases where the system was wrong. |
-| `final_verdict` | The verdict that was actually delivered (after any human override). Ground truth for training. |
-| `agent_team_context` | Multi-agent metadata. Tracks whether the verification was part of a team workflow, which agent role produced it, and which agent handed off context. Null fields for single-agent calls. |
-
-These signals accumulate. When Tier 2 is deployed, this historical data becomes the training set -- the system can be bootstrapped from real governance decisions, not synthetic data alone. When federated learning is deployed, these signals feed the aggregation pipeline.
-
-**Current storage:** In-memory dict (demo mode -- lost on restart).
-**Production storage:** PostgreSQL or DynamoDB with encryption at rest. Retention policy per org.
-
----
-
-## 12. Roadmap
-
-```
-Phase 1  ========================  DONE
-Phase 2  ===.......................  IN PROGRESS
-Phase 3  ........................   Planned
-Phase 4  ........................   Planned
-Phase 5  ........................   Planned
-```
-
-### Phase 1: Demo API (current)
-
-- Tier 1 governance checks (deterministic/simulated)
-- 5 REST endpoints: shield, verify, audit, configure, dashboard
-- MCP server for Anthropic Cowork plugin integration
-- Interactive frontend (login + governance dashboard)
-- Training signal collection begins (in-memory)
-- Single-agent verification
-
-**Status: Complete.**
-
-### Phase 2: Production Tier 1
-
-- Real DeBERTa entailment via ONNX-optimized inference
-- Real semantic entropy via multi-sample API calls + embedding clustering
-- Real claim extraction via NER-based models (T5-small fine-tuned)
-- Production database (PostgreSQL / DynamoDB) for audit trail and training signals
-- Azure App Service deployment with CI/CD
-- Authentication via Azure AD / JWT with RBAC
-
-**Status: In progress.**
-
-### Phase 3: Tier 2 Meta-Classifier
-
-- Fine-tune Llama 3 8B per domain (legal, financial, healthcare)
-- LoRA adapters as domain-specific IP
-- Conformal prediction calibration for coverage guarantees
-- Target: 95% auto-verification rate, 95% sensitivity on true positives
-- Human review workflow for the remaining 5%
-
-**Status: Planned. Dependent on Phase 2 training signal volume.**
-
-### Phase 4: Multi-Agent Team Governance
-
-- Agent-level, handoff-level, and assembly-level verification
-- Graph-based audit trails with weakest-link identification
-- A2A protocol support alongside MCP
-- CrewAI, LangGraph, and AutoGen framework integration
-- `POST /v1/verify-handoff` endpoint for inter-agent context verification
-
-**Status: Planned. Dependent on Phase 2 production infrastructure.**
-
-### Phase 5: Federated Learning Network
-
-- Fleet-wide weight aggregation (FedAvg / FedProx)
-- Cross-domain pattern transfer
-- Differential privacy for weight updates
-- Continuous model improvement cycle (weekly updates)
-- The moat: every new deployment makes every other deployment smarter
-
-**Status: Planned. Dependent on Phase 3 model deployment and multi-tenant fleet.**
-
----
-
-## 13. Deployment Options
-
-### Local — Docker Compose (demos & development)
-
-```yaml
-# docker-compose.yml
-services:
-  meerkat-api:
-    build: .
-    ports:
-      - "8000:8000"
-    environment:
-      - MEERKAT_MODE=demo
-      - MEERKAT_DOMAIN=legal
-      - LOG_LEVEL=debug
-    volumes:
-      - ./configs:/app/configs
-```
-
-```bash
-docker compose up -d
-# API available at http://localhost:8000
-# Docs at http://localhost:8000/docs
-```
-
-### AWS — Production Stack
-
-```
-┌─────────────────────────────────────────────────────┐
-│  AWS Account (client's or Meerkat-managed)           │
-│                                                      │
-│  ┌──────────────┐    ┌─────────────┐                │
-│  │ API Gateway   │───▶│  Lambda     │                │
-│  │ (REST API)    │    │  (FastAPI)  │                │
-│  └──────────────┘    └──────┬──────┘                │
-│                             │                        │
-│               ┌─────────────┼─────────────┐         │
-│               │             │             │          │
-│        ┌──────▼──────┐ ┌────▼────┐ ┌──────▼──────┐  │
-│        │  DynamoDB    │ │  S3     │ │ CloudWatch  │  │
-│        │ (audit logs) │ │(configs)│ │ (metrics)   │  │
-│        └─────────────┘ └─────────┘ └─────────────┘  │
-│                                                      │
-│        ┌─────────────┐                               │
-│        │ SageMaker    │  ← DeBERTa ONNX endpoint     │
-│        │ (inference)  │  ← sentence-transformers      │
-│        └─────────────┘                               │
-└─────────────────────────────────────────────────────┘
-```
-
-Deployed via CloudFormation:
-```bash
-aws cloudformation deploy \
-  --template meerkat-production-stack.yaml \
-  --stack-name meerkat-governance \
-  --parameter-overrides \
-    MeerkatApiKey=mk_live_xxx \
-    Domain=legal \
-    AuditRetentionDays=2555 \
-    EnableSageMaker=true
-```
-
-### On-Premise — Enterprise
-
-For clients that require data sovereignty (healthcare networks, banks, government):
-
-- Docker images delivered to client's container registry
-- Helm chart for Kubernetes deployment
-- All inference runs on client hardware — no data leaves their network
-- Meerkat provides the software license + support; client provides infrastructure
-- Audit logs stored in client's database (PostgreSQL or equivalent)
-
----
-
-## 14. Security
+## 5. Security and Compliance
 
 ### Authentication
 
-```
-Authorization: Bearer mk_live_{org_id}_{random_32}
-                      │        │         │
-                      │        │         └─ Cryptographically random
-                      │        └─ Tied to a specific organization
-                      └─ Environment prefix (mk_live_ or mk_test_)
-```
+**API key auth:** Keys use the format `mk_{env}_{random}` (e.g., `mk_live_a1b2c3...`). Keys are SHA-256 hashed before storage. Raw keys are never persisted. Transmitted via `Authorization: Bearer` header or `x-meerkat-key` header.
 
-- API keys are hashed (SHA-256) before storage — raw keys are never persisted
-- Keys scoped to specific domains and check suites
-- Key rotation supported without downtime (grace period for old keys)
+**Microsoft SSO:** Azure AD authentication via MSAL `ConfidentialClientApplication`. OAuth2 authorization code flow. JWT session tokens stored in httpOnly, secure, sameSite=strict cookies. 8-hour session expiry.
 
-### Rate Limiting
+**Dual auth middleware:** Each request is authenticated via API key first, then JWT cookie. API key auth is intended for programmatic access (AI agents, CI/CD). JWT auth is intended for browser-based users (dashboard, admin).
 
-| Tier | Requests/min | Burst |
-|------|-------------|-------|
-| Starter | 60 | 10 |
-| Professional | 600 | 50 |
-| Enterprise | Custom | Custom |
+### FHIR API Authentication
 
-Rate limiting is per API key, enforced at the ingress layer. Exceeded limits return `429 Too Many Requests` with `Retry-After` header.
+The TRUST platform currently uses the Cerner Open Sandbox, which provides unauthenticated read access to synthetic patient data. Production FHIR integration will require:
+
+- OAuth2 SMART on FHIR authorization
+- Client credentials flow for backend services
+- Scoped access tokens per patient/resource type
+- Token refresh and session management
 
 ### Data Handling
 
-| Data | Stored? | Detail |
-|------|---------|--------|
-| Source documents | **No** | Never persisted. Processed in memory, discarded after verification. |
-| AI model outputs | **No** | Same — in memory only. |
-| User inputs | **No** | Only a SHA-256 hash is stored in the audit record. |
-| Governance scores | **Yes** | Stored in the audit trail with full check results. |
-| API keys | **Yes** | Hashed only — raw keys never stored. |
-| Org configurations | **Yes** | Encrypted at rest (AES-256). |
+| Data Type | Stored | Detail |
+|-----------|--------|--------|
+| AI outputs | Yes | Stored in verification records for audit trail |
+| Source context | Yes | Stored alongside verification for reproducibility |
+| User inputs | Yes | Stored in verification records |
+| Trust scores | Yes | Stored with full check breakdown |
+| API keys | Yes | SHA-256 hash only, raw key never persisted |
+| Patient data (FHIR) | No | Retrieved at verification time, processed in memory, not persisted |
+| Knowledge base docs | Yes | Stored as chunked text with vector embeddings |
 
-### Audit Log Security
+### HIPAA Considerations
 
-- Audit records are **append-only** — no update or delete operations exposed
-- Encrypted at rest (AES-256-GCM)
-- Encrypted in transit (TLS 1.3)
-- Retention period configurable per org (default: 7 years for regulated industries)
-- Export available in JSON and CSV for regulatory submissions
+The TRUST healthcare deployment handles synthetic patient data (Cerner Sandbox). For production clinical deployment:
 
-### Network
+- Patient data from FHIR APIs is processed in memory and not persisted in Meerkat's database
+- Verification records store the AI output and trust scores but can be configured to exclude raw clinical text
+- All data at rest encrypted (Azure PostgreSQL TDE, Key Vault for secrets)
+- All data in transit over TLS
+- Access logging via Azure AD and API key audit trails
+- Audit records are append-only with configurable retention
+- BAA (Business Associate Agreement) required with Azure for production HIPAA workloads
 
-- All endpoints HTTPS-only (HTTP redirects to HTTPS)
-- CORS restricted to configured origins
-- No external network calls except to the configured AI model API
-- Health endpoint (`/health`) is the only unauthenticated route
+### Rate Limiting
+
+Per-plan rate limiting enforced at the middleware layer:
+
+| Plan | Requests/minute |
+|------|----------------|
+| Starter | 60 |
+| Professional | 300 |
+| Enterprise | 1000 |
+
+Starter plan also enforces a monthly verification cap (1000 verifications/month). Exceeding the cap returns HTTP 429.
 
 ---
 
-<p align="center">
-  <strong>Meerkat Governance API</strong><br/>
-  <em>Architecture v2.0 — February 2026</em>
-</p>
+Meerkat Governance Platform -- Architecture v3.0, February 2026

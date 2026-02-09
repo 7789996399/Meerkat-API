@@ -1,301 +1,380 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/status-alpha-orange?style=for-the-badge" alt="Status: Alpha"/>
-  <img src="https://img.shields.io/badge/python-3.11+-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11+"/>
-  <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"/>
-  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"/>
-  <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License: MIT"/>
-</p>
+# Meerkat
 
-<h1 align="center">Meerkat API</h1>
-<h3 align="center">The Governance Layer for the AI Agent Era</h3>
-
-<p align="center">
-  <strong>One API. Any AI model. Every regulated industry.</strong>
-</p>
-
-<p align="center">
-  As single AI agents evolve into coordinated agent teams -- reviewing contracts,<br/>
-  analyzing portfolios, writing clinical notes in parallel -- governance becomes<br/>
-  exponentially harder. One hallucination propagates across the entire team.<br/><br/>
-  Meerkat verifies every agent, every handoff, every assembly.<br/>
-  Every request scanned. Every response verified. Every decision audited.
-</p>
+AI governance for regulated industries -- real-time verification of AI agent outputs.
 
 ---
 
-## The Problem
+## What Meerkat Does
 
-Microsoft CEO Satya Nadella declared **"SaaS is dead"** -- business logic is moving out of software applications and into AI agents. The per-seat dashboard is being replaced by autonomous agents that talk directly to systems via APIs.
-
-This is already happening. Anthropic launched legal, financial, and healthcare plugins for Cowork -- with **160K+ installs for legal alone**. These AI agents are reviewing contracts overnight, analyzing portfolios at scale, and writing clinical notes in real time. They are not assistants waiting for instructions. They are autonomous workers executing business logic.
-
-But ask yourself:
-
-- **Who verifies the agent's output?** A hallucinated contract clause could cost millions.
-- **Who catches the bias?** A skewed financial recommendation could trigger regulatory action.
-- **Who creates the audit trail?** Regulators do not accept "the AI said so."
-
-The AI providers secure the plumbing -- authentication, rate limits, model access. But nobody governs the agents' actual decisions.
-
-**In the old world, humans checked the work. In the agent era, you need infrastructure that checks the agents.**
-
-That infrastructure is Meerkat.
-
-Every prompt. Every response. Every claim. Scored, logged, and auditable.
+Meerkat sits between AI models and end users in regulated environments. It intercepts AI-generated outputs -- clinical notes, contract analysis, financial recommendations -- and verifies them against ground truth sources before they reach the user. Every output receives a trust score based on multiple independent governance checks. Every decision is logged for compliance and audit.
 
 ---
 
-## How It Works
+## Live Demo -- TRUST Healthcare Platform
 
-```
-+-----------+     +-----------------+     +--------------+     +-----------------+     +----------+
-|           |     |                 |     |              |     |                 |     |          |
-| AI Agent  |---->|  Meerkat Shield |---->|   AI Model   |---->|  Meerkat Verify |---->| Verified |
-| Request   |     |  (scan input)   |     |  (Claude /   |     | (check output)  |     | Response |
-|           |     |                 |     |  GPT / etc.) |     |                 |     |          |
-+-----------+     +-----------------+     +--------------+     +-----------------+     +----------+
-                        |                                            |
-                        v                                            v
-                 Prompt injection?                          Governance Score
-                 Jailbreak attempt?                         +-- Entailment pass/fail
-                 Policy violation?                          +-- Confidence level
-                                                            +-- Bias detected?
-                                                            +-- Claims verified?
-                                                            |
-                                                            v
-                                                   +-----------------+
-                                                   |   Audit Trail   |
-                                                   |  (immutable)    |
-                                                   +-----------------+
-```
+The TRUST (Trustworthy, Reliable, Understandable, Safe, Transparent) platform is the current production deployment of Meerkat for healthcare. This is the live system deployed on Azure.
 
----
+### Pipeline
 
-## Live Demo
+**Step 1 -- Ground Truth / EMR Check**
 
-Meerkat ships with a fully interactive frontend -- login page + governance dashboard.
+Connects to the Cerner Sandbox via FHIR R4 APIs. Retrieves patient records (conditions, medications, allergies, vitals) as the authoritative source of truth. AI Scribe output is decomposed into individual claims, and each claim is compared against actual EMR data. The system uses an EHR-first verification strategy: claims that match EMR records are marked as verified immediately, and only unverified or contradicted claims proceed to further checks. This saves approximately 80% of downstream compute.
 
-```
-+-----------------+      +------------------+      +-----------------------------+
-|                 |      |                  |      |                             |
-|  Login Page     |----->|  Microsoft SSO   |----->|  Governance Dashboard       |
-|  (login.html)   |      |  (Azure AD)      |      |  (React app -- 5 tabs)      |
-|                 |      |                  |      |                             |
-+-----------------+      +------------------+      +-----------------------------+
-```
+- FHIR endpoint: Cerner Open Sandbox (R4)
+- Resources accessed: Patient, Condition, MedicationRequest, AllergyIntolerance, DocumentReference
 
-The **login page** (`frontend/login.html`) is the front door -- a polished dark-themed SSO page with the full MEERKAT logo and Microsoft sign-in. In demo mode, it redirects straight to the dashboard.
+**Step 2 -- Faithfulness Check**
 
-The **dashboard** (`frontend/dashboard.html`) is an interactive React app that serves as both documentation and live demo, with 5 tabs:
+<!-- NOTE: The codebase implements faithfulness checking via EHR-first claim verification
+     and semantic entropy analysis (ml-service/app/hallucination.py), not the specific
+     Vectara HHEM model. The approach achieves the same goal -- scoring whether AI-generated
+     content is faithful to source data -- using bidirectional entailment rather than HHEM. -->
 
-| Tab | What It Shows |
-|-----|---------------|
-| **The Big Idea** | The agent-era thesis -- why autonomous AI needs governance infrastructure |
-| **How It Works** | Interactive 6-step flow from agent request to verified response |
-| **API Endpoints** | Full request/response examples for all 5 endpoints |
-| **Integrations** | MCP, API proxy, AWS, and FHIR integration paths |
-| **Business Model** | Consumption-based pricing and revenue projections |
+Scores whether the AI-generated clinical note is faithful to the source EMR data. Uses the hallucination detection module in the ML service, which cross-references extracted claims against FHIR-retrieved patient records. Binary classification per claim: faithful vs. hallucinated content. The system specifically targets "confident hallucinators" -- cases where the AI model is highly certain but factually wrong, which are the most dangerous in clinical settings.
 
-> **Try it locally:**
-> ```bash
-> # Start the API (serves frontend automatically)
-> uvicorn api.main:app --port 8000
-> # Visit http://localhost:8000/login
-> ```
+**Step 3 -- Semantic Entropy (Farquhar et al. 2024)**
 
----
+Implements the semantic entropy method from Farquhar et al., published in Nature (2024):
 
-## Core API Endpoints
+1. Samples multiple completions (N=5) from the AI model at temperature > 0
+2. Clusters responses using bidirectional entailment -- two responses are semantically equivalent if A entails B AND B entails A
+3. Calculates Shannon entropy over the resulting semantic clusters
+4. Low entropy = model is confident and consistent across samples. High entropy = model is uncertain, possible confabulation.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/v1/shield` | **Prompt injection detection** -- Pre-flight scan of agent input for jailbreaks, prompt attacks, and policy violations |
-| `POST` | `/v1/verify` | **Real-time output verification** -- Entailment checking, semantic entropy, bias detection, and claim extraction on AI responses |
-| `GET` | `/v1/audit/{id}` | **Compliance audit trail** -- Immutable, timestamped record of every governance decision for regulatory review |
-| `POST` | `/v1/configure` | **Domain and org configuration** -- Set industry-specific rules, thresholds, and compliance policies per organization |
-| `GET` | `/v1/dashboard` | **Governance metrics** -- Aggregated view of shield blocks, verification scores, flagged responses, and system health |
+Entailment classification uses DeBERTa-large-MNLI via the Hugging Face Inference API.
+
+**Step 4 -- Physician Dashboard**
+
+PowerChart-style frontend built for clinical workflow. Displays AI Scribe output with a trust overlay showing which sections are verified, which are flagged, and the overall trust score. Supports three review tiers:
+
+- Brief review (15 sec): Low-risk output, confirmation only
+- Standard review (2-3 min): Medium-risk, check key claims
+- Detailed review (5+ min): High or critical risk, full manual verification
+
+Includes a time-saved calculator comparing automated verification against manual chart review.
+
+### Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Backend API | FastAPI (Python 3.11) on Azure App Service |
+| ML Service | FastAPI (Python 3.11) on Azure App Service |
+| Frontend | React 18 on Azure Static Web Apps |
+| Database | Azure PostgreSQL Flexible Server |
+| FHIR Integration | Cerner Open Sandbox (R4) via fhir.resources |
+| Entailment Model | DeBERTa-large-MNLI via Hugging Face Inference API |
+| LLM Sampling | OpenAI GPT-4o-mini, Anthropic Claude 3 Haiku |
+| Secrets | Azure Key Vault |
+| CI/CD | GitHub Actions (path-filtered deploys) |
+| Hosting Plan | Azure App Service Plan P1V2 (Canada Central) |
+| Auth | Azure AD via MSAL |
 
 ---
 
-## MCP Integration
+## Architecture Overview
 
-Connect Meerkat to any Anthropic Cowork plugin with one config block:
+Meerkat uses a multi-layer verification pipeline. Each AI output passes through independent governance checks before reaching the end user. The checks run in parallel where possible and produce a weighted composite trust score.
 
-```json
-{
-  "mcp_servers": {
-    "meerkat-governance": {
-      "command": "python",
-      "args": ["path/to/meerkat_mcp_server.py"],
-      "env": {
-        "MEERKAT_API_URL": "http://localhost:8000",
-        "MEERKAT_API_KEY": "mk_demo_test123"
-      }
-    }
-  }
-}
+```
+AI Agent Output
+      |
+      v
++------------------+     +---------------------+     +--------------------+
+| Ground Truth     |     | Semantic Entropy    |     | Claim Extraction   |
+| (FHIR / source)  |     | (Farquhar et al.)   |     | (NER + entailment) |
++------------------+     +---------------------+     +--------------------+
+      |                         |                           |
+      v                         v                           v
++------------------------------------------------------------------+
+|                    Weighted Trust Score                           |
+|                    Status: PASS / FLAG / BLOCK                   |
++------------------------------------------------------------------+
+      |
+      v
+  Audit Trail (immutable)
+      |
+      v
+  End User / Dashboard
 ```
 
-This gives the agent access to four governance tools: `meerkat_shield` (pre-flight input scan), `meerkat_verify` (post-flight output verification), `meerkat_audit` (compliance trail), and `meerkat_configure` (org rules). See [mcp/README.md](mcp/README.md) for full setup instructions and examples.
-
----
-
-## Integration Paths
-
-#### MCP Server -- Cowork plugin integration (see above)
-```bash
-# Add the config block above, then use your plugin as normal.
-# Claude automatically shields input and verifies output.
-```
-
-#### API Proxy -- Change 1 URL to route agent traffic through Meerkat
-```python
-# Before
-client = Anthropic(base_url="https://api.anthropic.com")
-
-# After -- all agent traffic now governed
-client = Anthropic(base_url="https://your-instance.meerkat.ai/proxy")
-```
-
-#### AWS Middleware -- One-click CloudFormation deploy
-```bash
-aws cloudformation deploy --template meerkat-stack.yaml --stack-name meerkat-gov
-```
-
-#### FHIR Bridge -- Healthcare EMR integration
-```yaml
-# meerkat.config.yaml
-domain: healthcare
-fhir_endpoint: https://ehr.hospital.org/fhir/R4
-governance_level: strict
-```
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical specification.
 
 ---
 
 ## Governance Checks
 
-Every AI agent response is evaluated across four dimensions:
-
-| Check | What It Does | Why It Matters |
-|-------|-------------|----------------|
-| **DeBERTa Entailment** | Compares the agent's answer against source documents using NLI | Catches hallucinations -- does the response actually follow from the evidence? |
-| **Semantic Entropy** | Measures model uncertainty across multiple sampled completions | Flags low-confidence answers before they reach downstream systems |
-| **Implicit Preference** | Detects hidden directional bias in language and recommendations | Ensures the agent is not steering users toward undisclosed preferences |
-| **Claim Extraction** | Identifies factual assertions and checks verifiability | Every claim is tagged -- verified, unverified, or contradicted |
+| Check | Description |
+|-------|-------------|
+| Ground truth verification | Compare AI output against authoritative source data -- EMR records, contract text, regulatory filings |
+| Faithfulness scoring | Detect hallucinated content that deviates from source, with emphasis on confident hallucinators |
+| Semantic entropy | Measure model confidence using bidirectional entailment clustering (Farquhar et al., Nature 2024) |
+| Implicit preference detection | Identify hidden directional bias in AI recommendations [in development] |
 
 ---
 
-## Multi-Agent Governance
+## Repository Structure
 
-Single agents are table stakes. The real challenge is **agent teams** -- multiple AI agents collaborating on a task, passing context between each other, with an orchestrator assembling the final output.
-
-| Level | What Meerkat Verifies |
-|-------|----------------------|
-| **Agent-level** | Each individual agent's output, independently. Catches hallucinations at the source. |
-| **Handoff-level** | Context passed between agents. Did information get lost or distorted in translation? |
-| **Assembly-level** | The orchestrator's final output against all individual agent outputs. Does the whole equal the sum of its parts? |
-
-The audit trail for agent teams is a **graph**, not a line. Compliance officers can see exactly **where** in the team a problem originated, which agent was the weakest link, and whether errors were introduced or inherited.
-
-**Protocol support:** MCP (Anthropic), A2A (Google Agent-to-Agent Protocol), CrewAI, LangGraph, AutoGen.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for full multi-agent architecture and audit trail schema.
-
----
-
-## Why Meerkat Gets Smarter
-
-Static governance checks are a depreciating asset -- AI models improve, hallucinations get subtler, and fixed rules fall behind. Meerkat is designed to learn.
-
-- **Tier 2 metacognitive engine** -- A fine-tuned LLM that evaluates AI reasoning patterns, not just outputs. Takes Tier 1 signals as input and learns which combinations indicate real problems vs. false alarms. Domain-specific LoRA adapters (healthcare, legal, financial) are the proprietary IP.
-- **Federated learning across the fleet** -- Every Meerkat deployment generates governance signals. Patterns (model weights, never raw data) are aggregated across the entire fleet. A hospital in Toronto catches a new hallucination pattern; the law firm in Vancouver catches the same class of error by next week.
-- **The moat** -- Every new deployment makes every other deployment smarter. The 1,000th client gets governance that is 1,000x more battle-tested than what the 1st client got. This network effect cannot be replicated without equivalent fleet scale.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details on the metacognitive engine, federated learning, and conformal prediction calibration.
-
----
-
-## Quick Start
-
-#### Install
-```bash
-pip install -r requirements.txt
+```
+.
+├── src/                                # Node.js API (Express + Prisma + TypeScript)
+│   ├── server.ts                       # Express app entry point
+│   ├── lib/prisma.ts                   # Prisma client singleton
+│   ├── middleware/
+│   │   ├── auth.ts                     # Dual auth: API key or JWT cookie (MSAL)
+│   │   └── rateLimit.ts                # Per-plan rate limiting
+│   ├── routes/
+│   │   ├── index.ts                    # Route registry
+│   │   ├── verify.ts                   # POST /v1/verify -- output verification
+│   │   ├── shield.ts                   # POST /v1/shield -- prompt injection scan
+│   │   ├── audit.ts                    # GET /v1/audit/:id -- audit trail
+│   │   ├── configure.ts               # POST /v1/configure -- org config
+│   │   ├── dashboard.ts               # GET /v1/dashboard -- metrics
+│   │   ├── knowledge-base.ts          # Knowledge base CRUD + upload
+│   │   ├── billing.ts                 # Stripe checkout, portal, usage
+│   │   ├── billing-webhook.ts         # Stripe webhook handler
+│   │   └── auth.ts                    # Microsoft SSO endpoints
+│   ├── services/
+│   │   ├── governance-checks.ts       # Four governance check implementations
+│   │   ├── prompt-shield.ts           # Prompt injection / jailbreak detection
+│   │   ├── billing.ts                 # Stripe integration + plan management
+│   │   ├── auth.ts                    # MSAL + JWT session management
+│   │   ├── semantic-search.ts         # pgvector similarity search
+│   │   ├── chunker.ts                 # Document chunking for knowledge base
+│   │   ├── embeddings.ts              # OpenAI embedding client
+│   │   └── job-queue.ts               # Background job processing
+│   └── mcp/
+│       ├── server.ts                  # MCP server with 3 tools
+│       ├── route.ts                   # SSE transport for Express
+│       └── index.ts                   # Standalone stdio transport
+│
+├── meerkat-semantic-entropy/           # Python microservice -- Farquhar method
+│   ├── app/
+│   │   ├── main.py                    # FastAPI: POST /analyze
+│   │   ├── entropy.py                 # Shannon entropy over semantic clusters
+│   │   ├── entailment_client.py       # Bidirectional NLI via DeBERTa
+│   │   └── union_find.py              # Union-find for equivalence classes
+│   ├── Dockerfile
+│   └── requirements.txt
+│
+├── meerkat-claim-extractor/            # Python microservice -- claim verification
+│   ├── app/
+│   │   ├── main.py                    # FastAPI: POST /extract
+│   │   ├── extractor.py               # spaCy NER-based claim extraction
+│   │   ├── verifier.py                # DeBERTa entailment verification
+│   │   └── entities.py                # Hallucinated entity detection
+│   ├── Dockerfile
+│   └── requirements.txt
+│
+├── meerkat-implicit-preference/        # Python microservice -- bias detection
+│   ├── app/
+│   │   ├── main.py                    # FastAPI: POST /analyze
+│   │   ├── sentiment.py               # DistilBERT SST-2 sentiment analysis
+│   │   ├── direction.py               # Domain-specific keyword bias scoring
+│   │   └── counterfactual.py          # Counterfactual comparison stub
+│   ├── Dockerfile
+│   └── requirements.txt
+│
+├── api/                                # Python demo API (original prototype)
+│   ├── main.py                        # FastAPI app with simulated checks
+│   ├── governance/                    # Heuristic-based governance checks
+│   ├── models/schemas.py             # Pydantic request/response models
+│   ├── routes/                        # REST endpoints
+│   └── store.py                       # In-memory audit storage
+│
+├── frontend/                           # Demo frontend
+│   ├── login.html                     # Microsoft SSO login page
+│   ├── dashboard.html                 # Interactive governance dashboard
+│   └── dashboard/MeerkatAPI.jsx       # React dashboard component
+│
+├── mcp/                                # Python MCP server (FastMCP)
+│   ├── meerkat_mcp_server.py
+│   └── test_mcp.py
+│
+├── prisma/
+│   ├── schema.prisma                  # Database schema (PostgreSQL + pgvector)
+│   ├── migrations/                    # Migration history
+│   └── seed.ts                        # Demo data seeding
+│
+├── docker-compose.yml                  # Local development compose
+├── Dockerfile                          # Python demo API container
+├── package.json                        # Node.js dependencies
+├── requirements.txt                    # Python demo dependencies
+├── tsconfig.json                       # TypeScript configuration
+└── mcp-client-config.sample.json       # MCP client config example
 ```
 
-#### Or run with Docker
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20+
+- PostgreSQL 14+ with pgvector extension
+- Python 3.11+ (for microservices)
+
+### Environment Variables
+
+Create a `.env` file in the project root:
+
 ```bash
-docker compose up
+# Database
+DATABASE_URL=postgresql://user:password@localhost:5432/meerkat_api
+
+# Microsoft SSO (optional -- API key auth works without this)
+MICROSOFT_CLIENT_ID=
+MICROSOFT_CLIENT_SECRET=
+MICROSOFT_TENANT_ID=
+MICROSOFT_REDIRECT_URI=http://localhost:3000/auth/microsoft/callback
+JWT_SECRET=your-secret-here
+
+# Stripe billing (optional)
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+
+# Microservice URLs (optional -- falls back to heuristic checks)
+MEERKAT_SEMANTIC_ENTROPY_URL=http://localhost:8001
+MEERKAT_IMPLICIT_PREFERENCE_URL=http://localhost:8002
+MEERKAT_CLAIM_EXTRACTOR_URL=http://localhost:8003
+
+# Embeddings (optional -- for knowledge base)
+OPENAI_API_KEY=
 ```
 
-#### Verify an AI agent response in 5 lines
-```python
-import requests
+### Run Locally
 
-result = requests.post("http://localhost:8000/v1/verify", json={
-    "input": "Review this NDA for risks.",
+```bash
+# Install dependencies
+npm install
+
+# Set up database
+npx prisma db push
+npx prisma db seed
+
+# Start the API
+npx tsx src/server.ts
+# API available at http://localhost:3000
+```
+
+### Run with Microservices
+
+```bash
+# Terminal 1: Node.js API
+npx tsx src/server.ts
+
+# Terminal 2: Semantic entropy service
+cd meerkat-semantic-entropy && pip install -r requirements.txt
+uvicorn app.main:app --port 8001
+
+# Terminal 3: Claim extractor
+cd meerkat-claim-extractor && pip install -r requirements.txt
+python -m spacy download en_core_web_trf
+uvicorn app.main:app --port 8003
+```
+
+### Verify an AI Output
+
+```bash
+curl -X POST http://localhost:3000/v1/verify \
+  -H "x-meerkat-key: mk_demo_test123" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": "Summarize this contract clause.",
     "output": "The contract includes a 90-day termination clause.",
     "context": "Section 12.1: Either party may terminate with 30 days written notice.",
     "domain": "legal"
-}).json()
-
-print(result["trust_score"])   # 32 -- BLOCK (hallucination detected)
-print(result["status"])        # "BLOCK"
+  }'
 ```
 
 ---
 
-## Pricing
+## API Endpoints
 
-Consumption-based pricing aligned with the agent era -- you pay for governance work done, not seats occupied.
+### Governance
 
-| Tier | Price | Model | Best For |
-|------|-------|-------|----------|
-| **Starter** | $0.002 per verification | Pay-per-use, no commitment | Solo practitioners, small firms testing the waters |
-| **Professional** | $499/mo per agent monitored | Flat rate per AI agent under governance, unlimited verifications | Mid-size firms, hospital departments, financial advisory teams |
-| **Enterprise** | Custom fleet pricing | Per-agent-fleet pricing for organizations running multiple agents across domains | Hospital networks, large law firms, banks, insurance companies |
+| Method | Endpoint | Description | Status |
+|--------|----------|-------------|--------|
+| `POST` | `/v1/verify` | Verify AI output against source context. Returns trust score, status (PASS/FLAG/BLOCK), per-check results, and audit ID. | Working |
+| `POST` | `/v1/shield` | Scan input for prompt injection, jailbreak attempts, and policy violations. | Working |
+| `GET` | `/v1/audit/:auditId` | Retrieve immutable audit record for a past verification. | Working |
+| `POST` | `/v1/configure` | Set org-level governance rules: thresholds, required checks, domain config. | Working |
+| `GET` | `/v1/dashboard` | Aggregated governance metrics: total verifications, avg trust score, flag distribution. | Working |
 
-Starter includes: entailment checking, semantic entropy, basic audit trail, 1 domain.
-Professional adds: all 4 governance checks, prompt injection shield, dashboard, priority support.
-Enterprise adds: on-premise deploy, custom domain configs, SOC 2 / HIPAA / FINRA compliance, SLA guarantee.
+### Knowledge Base
+
+| Method | Endpoint | Description | Status |
+|--------|----------|-------------|--------|
+| `POST` | `/v1/knowledge-base/upload` | Upload PDF, DOCX, or TXT documents. Auto-chunks and indexes for semantic search. | Working |
+| `GET` | `/v1/knowledge-base` | List knowledge bases and documents for the org. | Working |
+| `GET` | `/v1/knowledge-base/:documentId` | Document detail with chunk preview. | Working |
+
+### Billing
+
+| Method | Endpoint | Description | Status |
+|--------|----------|-------------|--------|
+| `POST` | `/v1/billing/checkout` | Create Stripe Checkout session for Professional plan. | Working |
+| `POST` | `/v1/billing/portal` | Create Stripe Customer Portal session. | Working |
+| `GET` | `/v1/billing/usage` | Current plan, verification count, billing period. | Working |
+| `POST` | `/v1/billing/webhook` | Stripe webhook handler (checkout, invoice, subscription events). | Working |
+
+### Authentication
+
+| Method | Endpoint | Description | Status |
+|--------|----------|-------------|--------|
+| `GET` | `/auth/microsoft` | Redirect to Microsoft login (Azure AD). | Working |
+| `GET` | `/auth/microsoft/callback` | OAuth callback, sets JWT session cookie. | Working |
+| `GET` | `/auth/me` | Current user profile from session. | Working |
+| `POST` | `/auth/logout` | Clear session cookie. | Working |
+
+### MCP Server
+
+| Transport | Endpoint | Description | Status |
+|-----------|----------|-------------|--------|
+| SSE | `/mcp` | MCP server with tools: `meerkat_verify`, `meerkat_shield`, `meerkat_audit` | Working |
+| stdio | `npx tsx src/mcp/index.ts` | Standalone MCP server for local IDE integration | Working |
+
+### System
+
+| Method | Endpoint | Description | Status |
+|--------|----------|-------------|--------|
+| `GET` | `/v1/health` | Health check (unauthenticated). | Working |
 
 ---
 
-## Tech Stack
+## Research Foundation
 
-| Component | Technology |
-|-----------|-----------|
-| API Framework | **FastAPI** with async request handling |
-| Data Validation | **Pydantic v2** for strict schema enforcement |
-| Entailment Engine | **DeBERTa-v3** via ONNX Runtime (fast inference, no GPU required) |
-| Containerization | **Docker** with multi-stage builds |
-| AI Integration | **MCP Protocol** for native Anthropic plugin support |
-| Deployment | **Azure App Service** / **AWS CloudFormation** |
+- Farquhar, S., Kossen, J., Kuhn, L., & Gal, Y. (2024). Detecting hallucinations in large language models using semantic entropy. *Nature*, 630, 625--630. https://doi.org/10.1038/s41586-024-07421-0
 
----
+  The semantic entropy method is implemented in `meerkat-semantic-entropy/` and in the TRUST ML service. The core insight: sampling multiple completions and clustering by bidirectional entailment reveals model uncertainty that single-response confidence scores miss.
 
-## Project Status
+- Hughes, A. et al. HHEM -- Hughes Hallucination Evaluation Model (Vectara). Used as a reference for faithfulness scoring methodology. The TRUST platform implements faithfulness checking via EHR-first claim verification with DeBERTa-based entailment.
 
-```
-Phase 1  ========================  DONE -- Demo API + MCP server
-Phase 2  ===.......................  Production Tier 1 (real models)
-Phase 3  ........................   Tier 2 meta-classifier
-Phase 4  ........................   Multi-agent team governance
-Phase 5  ........................   Federated learning network
-```
-
-| Phase | Milestone | Status |
-|-------|-----------|--------|
-| **1** | Demo API with governance engine, MCP server, interactive frontend | **Done** |
-| **2** | Production Tier 1 -- real DeBERTa, semantic entropy, claim extraction, database | In progress |
-| **3** | Tier 2 meta-classifier -- fine-tuned Llama 3 8B with domain LoRA adapters | Planned |
-| **4** | Multi-agent team governance -- agent-level, handoff-level, assembly-level verification | Planned |
-| **5** | Federated learning network -- fleet-wide model improvement | Planned |
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed roadmap and technical design.
+- He, P., Liu, X., Gao, J., & Chen, W. (2021). DeBERTa: Decoding-enhanced BERT with disentangled attention. *ICLR 2021*. DeBERTa-v3-large-MNLI is used for natural language inference across the entailment and claim verification checks.
 
 ---
 
-<p align="center">
-  <strong>Built by Jean and CL -- Vancouver, BC</strong><br/>
-  <em>Always watching. Always verifying. Always trustworthy.</em>
-</p>
+## Roadmap
+
+**Done** -- TRUST Healthcare Platform
+- Live on Azure with Cerner Sandbox FHIR integration
+- Semantic entropy (Farquhar et al.) for hallucination detection
+- EHR-first verification pipeline (80% compute savings)
+- PowerChart-style physician dashboard with tiered review
+- Validated on MedHallu benchmark
+
+**Next** -- Meerkat API (multi-domain expansion)
+- Node.js/TypeScript API with four governance checks (working, in this repo)
+- MCP server integration for Anthropic Cowork plugins (working)
+- Knowledge base with semantic search via pgvector (working)
+- Microsoft SSO with dual auth (working)
+- Self-service onboarding and org management
+
+**Future**
+- Stripe billing in production (code complete, not yet live)
+- Enterprise deployment options (on-premise, dedicated infrastructure)
+- Tier 2 metacognitive engine (domain-specific LoRA adapters)
+- Multi-agent team governance (agent-level, handoff-level, assembly-level)
+
+---
+
+Built by Jean and CL -- Vancouver, BC
