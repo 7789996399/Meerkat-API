@@ -70,7 +70,9 @@ async def verify(request: VerifyRequest) -> VerifyResponse:
         check_results["entailment"] = check_entailment(request.output, request.context)
 
     if GovernanceCheck.semantic_entropy in request.checks:
-        check_results["semantic_entropy"] = check_entropy(request.output)
+        check_results["semantic_entropy"] = await check_entropy(
+            request.output, question=request.input, context=request.context,
+        )
 
     if GovernanceCheck.implicit_preference in request.checks:
         check_results["implicit_preference"] = check_preference(request.output)

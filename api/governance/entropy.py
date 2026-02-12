@@ -1,39 +1,126 @@
 """
-Semantic Entropy Check (demo mode)
+Semantic Entropy Check
 
-Measures how confident the AI model appears in its output. In production,
-this would sample N completions and measure semantic divergence. In demo
-mode, we analyze the output text itself for signals of uncertainty.
+Calls the real semantic entropy microservice (meerkat-entropy on port 8001)
+which implements the full Farquhar et al. (Nature, 2024) pipeline:
+  1. Generate N completions via Ollama at temperature=1.0
+  2. Cluster by bidirectional entailment (DeBERTa-large-MNLI)
+  3. Compute Shannon entropy over clusters
 
-HIGH confidence (low entropy, high score):
-  - Specific numbers, dates, section references
-  - Definitive language ("is", "contains", "requires")
-  - Structured, factual statements
-
-LOW confidence (high entropy, low score):
-  - Hedge words ("may", "might", "could", "possibly", "appears")
-  - Qualifying phrases ("it seems", "it is unclear", "arguably")
-  - Self-contradicting statements within the same output
-  - Vague language without specifics
-
-PRODUCTION MODE:
-  Would make N parallel API calls with temperature > 0, embed with
-  sentence-transformers, cluster semantically, compute entropy over
-  cluster distribution.
+Falls back to a local heuristic if the microservice is unavailable
+(e.g. running the gateway standalone without Docker Compose).
 """
 
+import logging
+import os
 import re
+
+import httpx
 
 from api.models.schemas import CheckResult
 
-# Words that indicate the model is uncertain
+logger = logging.getLogger(__name__)
+
+ENTROPY_SERVICE_URL = os.getenv("ENTROPY_SERVICE_URL", "http://localhost:8001")
+
+# ── Flags that the microservice interpretation maps to ─────────────
+
+_FLAGGED_INTERPRETATIONS = {
+    "moderate_uncertainty",
+    "high_uncertainty",
+    "confabulation_likely",
+}
+
+
+async def check_entropy(
+    output: str,
+    question: str | None = None,
+    context: str | None = None,
+) -> CheckResult:
+    """Run semantic entropy check via the real ML microservice.
+
+    Falls back to the local heuristic if the service is unreachable.
+    """
+    if question is None:
+        # Can't call the microservice without a question -- use heuristic
+        return _check_entropy_heuristic(output)
+
+    url = f"{ENTROPY_SERVICE_URL}/analyze"
+    payload = {
+        "question": question,
+        "ai_output": output,
+        "num_completions": 10,
+    }
+    if context:
+        payload["source_context"] = context
+
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+
+        data = resp.json()
+        return _map_service_response(data)
+
+    except Exception as e:
+        logger.warning(
+            "Entropy microservice unavailable (%s), falling back to heuristic",
+            e,
+        )
+        return _check_entropy_heuristic(output)
+
+
+def _map_service_response(data: dict) -> CheckResult:
+    """Map the microservice JSON response to a CheckResult."""
+    semantic_entropy = data["semantic_entropy"]
+    interpretation = data["interpretation"]
+    num_clusters = data["num_clusters"]
+    num_completions = data["num_completions"]
+    ai_in_majority = data["ai_output_in_majority"]
+
+    # Invert: microservice entropy 0=certain, 1=uncertain
+    # CheckResult score 0=worst, 1=best
+    score = round(1.0 - semantic_entropy, 3)
+
+    flags: list[str] = []
+    if interpretation in _FLAGGED_INTERPRETATIONS:
+        flags.append(interpretation)
+    if not ai_in_majority and num_clusters > 1:
+        flags.append("ai_output_outside_majority_cluster")
+
+    # Build detail message
+    if interpretation == "certain":
+        detail = (
+            f"High confidence: all {num_completions} sampled completions "
+            f"converged into {num_clusters} cluster(s). "
+            f"Semantic entropy: {semantic_entropy:.3f}."
+        )
+    elif interpretation == "confabulation_likely":
+        detail = (
+            f"Confabulation likely: {num_completions} completions diverged into "
+            f"{num_clusters} clusters. Semantic entropy: {semantic_entropy:.3f}."
+        )
+    else:
+        level = interpretation.replace("_", " ")
+        detail = (
+            f"{level.capitalize()}: {num_completions} completions formed "
+            f"{num_clusters} cluster(s). Semantic entropy: {semantic_entropy:.3f}."
+        )
+
+    if not ai_in_majority and num_clusters > 1:
+        detail += " The original AI output is NOT in the majority cluster."
+
+    return CheckResult(score=score, flags=flags, detail=detail)
+
+
+# ── Heuristic fallback (text-based, no ML) ────────────────────────
+
 HEDGE_WORDS = {
     "may", "might", "could", "possibly", "perhaps", "uncertain",
     "likely", "unlikely", "appears", "seems", "arguably", "potentially",
     "suggest", "suggests", "probable", "presumably", "conceivably",
 }
 
-# Stronger hedging phrases (multi-word)
 HEDGE_PHRASES = [
     "it is unclear", "it seems", "it appears", "it is possible",
     "it is likely", "it is unlikely", "there may be", "there might be",
@@ -41,16 +128,14 @@ HEDGE_PHRASES = [
     "open to interpretation", "subject to debate",
 ]
 
-# Confidence boosters -- specific, factual language
 CONFIDENCE_PATTERNS = [
-    r'\b\d+[\s-](?:day|week|month|year|mile)s?\b',  # "30 days", "12-month"
-    r'(?:Section|Clause|Article)\s+\d',               # legal references
-    r'\$[\d,]+',                                       # dollar amounts
-    r'\d+(?:\.\d+)?%',                                 # percentages
+    r'\b\d+[\s-](?:day|week|month|year|mile)s?\b',
+    r'(?:Section|Clause|Article)\s+\d',
+    r'\$[\d,]+',
+    r'\d+(?:\.\d+)?%',
     r'\b(?:requires|contains|states|specifies|provides|mandates)\b',
 ]
 
-# Self-contradiction signals
 CONTRADICTION_PAIRS = [
     (r'\bbut\s+(?:also|however)', "hedging_qualifier"),
     (r'\bhowever.*(?:nevertheless|nonetheless)', "contradictory_structure"),
@@ -58,52 +143,33 @@ CONTRADICTION_PAIRS = [
 ]
 
 
-def check_entropy(output: str) -> CheckResult:
-    """Run the semantic entropy check. Returns a CheckResult with score 0.0-1.0.
-    Higher score = more confident = lower entropy = better."""
-
+def _check_entropy_heuristic(output: str) -> CheckResult:
+    """Heuristic fallback: analyse the text itself for confidence signals."""
     text_lower = output.lower()
     words = text_lower.split()
     word_count = max(len(words), 1)
 
-    # Count hedge words
     hedge_count = sum(1 for w in words if w in HEDGE_WORDS)
     hedge_ratio = hedge_count / word_count
-
-    # Count hedge phrases
     phrase_count = sum(1 for phrase in HEDGE_PHRASES if phrase in text_lower)
-
-    # Count confidence boosters
     confidence_count = sum(
         len(re.findall(pattern, output, re.IGNORECASE))
         for pattern in CONFIDENCE_PATTERNS
     )
-
-    # Check for self-contradictions
     contradiction_count = sum(
         1 for pattern, _ in CONTRADICTION_PAIRS
         if re.search(pattern, text_lower)
     )
 
-    # Build the score:
-    # Start at 0.5 (neutral), boost for confidence signals, penalize for hedging
     score = 0.5
-
-    # Confidence boosters push the score up
-    score += min(confidence_count * 0.08, 0.4)  # up to +0.4 for lots of specifics
-
-    # Hedging pushes the score down
-    score -= hedge_ratio * 3.0          # heavy penalty for hedge word density
-    score -= phrase_count * 0.08        # each hedge phrase costs 0.08
-    score -= contradiction_count * 0.15  # contradictions are a big red flag
-
-    # Very short responses with no specifics are slightly uncertain
+    score += min(confidence_count * 0.08, 0.4)
+    score -= hedge_ratio * 3.0
+    score -= phrase_count * 0.08
+    score -= contradiction_count * 0.15
     if word_count < 20 and confidence_count == 0:
         score -= 0.1
-
     score = round(max(0.0, min(1.0, score)), 3)
 
-    # Determine flags and detail
     flags: list[str] = []
     details: list[str] = []
 
@@ -124,4 +190,5 @@ def check_entropy(output: str) -> CheckResult:
     if not details:
         details.append("Output shows high confidence with specific facts and definitive language.")
 
-    return CheckResult(score=score, flags=flags, detail=" ".join(details))
+    detail = " ".join(details) + " (heuristic -- entropy service unavailable)"
+    return CheckResult(score=score, flags=flags, detail=detail)
