@@ -1,33 +1,89 @@
 """
-Implicit Preference Check (demo mode)
+Implicit Preference Check
 
-Detects hidden directional bias in AI recommendations. Does the model
-favor one side? Does it use loaded language to steer the user?
+Calls the real implicit-preference microservice (meerkat-preference on port 8003)
+which uses DistilBERT sentiment analysis, domain-specific direction detection,
+and counterfactual consistency analysis.
 
-SIGNALS OF BIAS:
-  - One-sided superlatives: "extremely aggressive", "obviously unfavorable"
-  - Prescriptive language: "must reject", "should never accept"
-  - Emotional loading: "alarming", "outrageous", "devastating"
-  - Consistent framing toward one party's interests
-  - Missing the other side's perspective entirely
-
-SIGNALS OF NEUTRALITY:
-  - Balanced framing: "on one hand... on the other"
-  - Objective language: "the clause states", "the provision provides"
-  - Presenting both perspectives
-  - Factual tone without editorial commentary
-
-PRODUCTION MODE:
-  Would generate a mirror prompt (same question, opposite framing),
-  get both responses, compare embeddings with cosine similarity.
-  High divergence = bias.
+Falls back to a local keyword heuristic if the microservice is unavailable.
 """
 
+import logging
+import os
 import re
+
+import httpx
 
 from api.models.schemas import CheckResult
 
-# Strong bias indicators -- loaded language that steers the reader
+logger = logging.getLogger(__name__)
+
+PREFERENCE_SERVICE_URL = os.getenv("PREFERENCE_SERVICE_URL", "http://localhost:8003")
+
+
+async def check_preference(
+    output: str,
+    domain: str = "general",
+    context: str | None = None,
+) -> CheckResult:
+    """Run implicit preference check via the real ML microservice.
+
+    Falls back to the local heuristic if the service is unreachable.
+    """
+    url = f"{PREFERENCE_SERVICE_URL}/analyze"
+    payload = {
+        "output": output,
+        "domain": domain,
+        "context": context or "",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+
+        data = resp.json()
+        return _map_service_response(data)
+
+    except Exception as e:
+        logger.warning(
+            "Preference microservice unavailable (%s), falling back to heuristic",
+            e,
+        )
+        return _check_preference_heuristic(output)
+
+
+def _map_service_response(data: dict) -> CheckResult:
+    """Map the microservice JSON response to a CheckResult."""
+    score = round(data["score"], 3)
+    flags = data.get("flags", [])
+    bias_detected = data["bias_detected"]
+    direction = data["direction"]
+    party_a = data.get("party_a", "")
+    party_b = data.get("party_b", "")
+    details = data.get("details", {})
+
+    # Build detail message
+    sentiment = details.get("sentiment", {})
+    sentiment_label = sentiment.get("label", "unknown")
+
+    if bias_detected:
+        detail = (
+            f"Bias detected (score {score:.3f}). "
+            f"Direction: {direction} (favoring {party_a} over {party_b}). "
+            f"Sentiment: {sentiment_label}."
+        )
+    else:
+        detail = (
+            f"Output is balanced (score {score:.3f}). "
+            f"Direction: {direction}. Sentiment: {sentiment_label}."
+        )
+
+    return CheckResult(score=score, flags=flags, detail=detail)
+
+
+# ── Heuristic fallback (keyword-based, no ML) ─────────────────────
+
 STRONG_BIAS_PHRASES = [
     "extremely aggressive", "extremely unfavorable", "clearly unfair",
     "obviously risky", "obviously unfavorable", "must reject",
@@ -37,14 +93,12 @@ STRONG_BIAS_PHRASES = [
     "you must not", "under no circumstances",
 ]
 
-# Mild bias indicators -- directional but not as extreme
 MILD_BIAS_WORDS = [
     "must", "should", "always", "never", "clearly", "obviously",
     "undoubtedly", "certainly", "worst", "terrible", "dangerous",
     "unacceptable", "unreasonable", "excessive", "egregious",
 ]
 
-# Neutral / balanced indicators (good signs)
 BALANCED_INDICATORS = [
     "however", "on the other hand", "alternatively", "in contrast",
     "both parties", "either party", "balanced", "standard",
@@ -54,46 +108,25 @@ BALANCED_INDICATORS = [
 ]
 
 
-def check_preference(output: str) -> CheckResult:
-    """Run the implicit preference check. Returns a CheckResult with score 0.0-1.0.
-    Higher score = more neutral/balanced = better."""
-
+def _check_preference_heuristic(output: str) -> CheckResult:
+    """Heuristic fallback: keyword counting for bias detection."""
     text_lower = output.lower()
 
-    # Count strong bias phrases
     strong_hits = sum(1 for phrase in STRONG_BIAS_PHRASES if phrase in text_lower)
-
-    # Count mild bias words
     mild_hits = sum(1 for word in MILD_BIAS_WORDS if word in text_lower)
-
-    # Count balanced indicators
     balanced_hits = sum(1 for phrase in BALANCED_INDICATORS if phrase in text_lower)
-
-    # Check for one-sided superlatives with numbers (e.g., "an aggressive 5-year clause")
     aggressive_claims = len(re.findall(
         r'\b(?:aggressive|extreme|excessive|unreasonable|outrageous)\s+\w+',
-        text_lower
+        text_lower,
     ))
 
-    # Build score
-    # Start at 0.85 (assume reasonably neutral unless proven otherwise)
     score = 0.85
-
-    # Strong bias is a big penalty
     score -= strong_hits * 0.20
-
-    # Mild bias words have a smaller penalty
     score -= mild_hits * 0.04
-
-    # Aggressive characterizations penalize
     score -= aggressive_claims * 0.10
-
-    # Balanced language is a bonus
     score += balanced_hits * 0.03
-
     score = round(max(0.0, min(1.0, score)), 3)
 
-    # Flags and detail
     flags: list[str] = []
 
     if score < 0.5:
@@ -114,4 +147,5 @@ def check_preference(output: str) -> CheckResult:
         if balanced_hits > 0:
             detail += f" Found {balanced_hits} balanced/objective indicator(s)."
 
+    detail += " (heuristic -- preference service unavailable)"
     return CheckResult(score=score, flags=flags, detail=detail)

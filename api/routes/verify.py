@@ -75,10 +75,14 @@ async def verify(request: VerifyRequest) -> VerifyResponse:
         )
 
     if GovernanceCheck.implicit_preference in request.checks:
-        check_results["implicit_preference"] = check_preference(request.output)
+        check_results["implicit_preference"] = await check_preference(
+            request.output, domain=request.domain.value, context=request.context,
+        )
 
     if GovernanceCheck.claim_extraction in request.checks:
-        check_results["claim_extraction"] = check_claims(request.output, request.context)
+        check_results["claim_extraction"] = await check_claims(
+            request.output, request.context,
+        )
 
     # Compute weighted trust score
     if check_results:
