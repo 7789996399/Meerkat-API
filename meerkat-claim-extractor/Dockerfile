@@ -8,6 +8,6 @@ RUN python -m spacy download en_core_web_trf
 
 COPY app/ app/
 
-EXPOSE 8004
+EXPOSE 8002
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8004"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002"]

@@ -1,4 +1,6 @@
 fastapi==0.115.12
 uvicorn==0.34.2
-aiohttp==3.11.18
 pydantic==2.11.1
+httpx==0.28.1
+transformers>=4.40.0
+torch>=2.2.0
