@@ -4,7 +4,7 @@ from pydantic import BaseModel
 class AnalyzeRequest(BaseModel):
     output: str
     domain: str = "general"
-    context: str = ""
+    source: str = ""
 
 
 class SentimentDetail(BaseModel):

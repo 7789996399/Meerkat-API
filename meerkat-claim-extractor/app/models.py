@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 class ExtractRequest(BaseModel):
     ai_output: str
-    source_context: str = ""
+    source: str = ""
     entailment_url: str = ""
 
 

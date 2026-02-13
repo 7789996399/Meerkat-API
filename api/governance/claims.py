@@ -39,7 +39,7 @@ async def check_claims(output: str, context: str | None) -> ClaimCheckResult:
     url = f"{CLAIMS_SERVICE_URL}/extract"
     payload = {
         "ai_output": output,
-        "source_context": context,
+        "source": context,
     }
 
     try:
@@ -67,16 +67,8 @@ def _map_service_response(data: dict) -> ClaimCheckResult:
     flags = data.get("flags", [])
     hallucinated = data.get("hallucinated_entities", [])
 
-    # Compute score from counts
-    if total > 0:
-        verified_ratio = verified / total
-        contradiction_penalty = contradicted * 0.25
-        unverified_penalty = unverified * 0.05
-        score = max(0.0, min(1.0, verified_ratio - contradiction_penalty - unverified_penalty))
-    else:
-        score = 0.7
-
-    score = round(score, 3)
+    # Score = verified / total (0 if no claims)
+    score = round(verified / total, 3) if total > 0 else 0.0
 
     # Build detail message
     parts = [f"Extracted {total} factual claim(s) (spaCy NER)."]

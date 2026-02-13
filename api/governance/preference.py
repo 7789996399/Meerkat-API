@@ -34,7 +34,7 @@ async def check_preference(
     payload = {
         "output": output,
         "domain": domain,
-        "context": context or "",
+        "source": context or "",
     }
 
     try:

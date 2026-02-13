@@ -22,10 +22,10 @@ async def extract(req: ExtractRequest):
     claims = extract_claims(req.ai_output)
 
     # Step 2: Verify claims against source context via entailment
-    claims = await verify_claims(claims, req.source_context, req.entailment_url)
+    claims = await verify_claims(claims, req.source, req.entailment_url)
 
     # Step 3: Entity cross-reference for hallucination detection
-    all_hallucinated = find_hallucinated_entities(req.ai_output, req.source_context)
+    all_hallucinated = find_hallucinated_entities(req.ai_output, req.source)
     hallucinated_set = {e.lower() for e in all_hallucinated}
 
     # Annotate each claim with its hallucinated entities

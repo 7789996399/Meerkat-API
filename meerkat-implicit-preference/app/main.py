@@ -36,10 +36,10 @@ async def analyze(req: AnalyzeRequest):
     sentiment = analyze_sentiment(req.output)
 
     # 2. Recommendation direction
-    direction = analyze_direction(req.output, req.domain, req.context)
+    direction = analyze_direction(req.output, req.domain, req.source)
 
     # 3. Counterfactual (stub)
-    counterfactual = analyze_counterfactual(req.output, req.context)
+    counterfactual = analyze_counterfactual(req.output, req.source)
 
     # --- Compute sub-scores ---
 
