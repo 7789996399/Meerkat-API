@@ -6,6 +6,7 @@ import {
   semantic_entropy_check,
   implicit_preference_check,
   claim_extraction_check,
+  numerical_verify_check,
   CheckResult,
 } from "../services/governance-checks";
 import { searchKnowledgeBase, ChunkMatch } from "../services/semantic-search";
@@ -14,12 +15,13 @@ import prisma from "../lib/prisma";
 
 const router = Router();
 
-const ALL_CHECKS = ["entailment", "semantic_entropy", "implicit_preference", "claim_extraction"];
+const ALL_CHECKS = ["entailment", "numerical_verify", "semantic_entropy", "implicit_preference", "claim_extraction"];
 
 const WEIGHTS: Record<string, number> = {
-  entailment: 0.40,
-  semantic_entropy: 0.25,
-  implicit_preference: 0.20,
+  entailment: 0.30,
+  numerical_verify: 0.20,
+  semantic_entropy: 0.20,
+  implicit_preference: 0.15,
   claim_extraction: 0.15,
 };
 
@@ -121,6 +123,13 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
         };
         break;
       }
+      case "numerical_verify":
+        checksResults.numerical_verify = await numerical_verify_check(
+          output,
+          context || "",
+          resolvedDomain,
+        );
+        break;
     }
   }
 
@@ -168,6 +177,15 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
   }
   if (allFlags.includes("majority_unverified")) {
     recommendations.push("Most claims are unverified. This response should not be trusted without review.");
+  }
+  if (allFlags.includes("critical_numerical_mismatch")) {
+    recommendations.push("CRITICAL: Numerical values (medication doses, lab values, or financial figures) do not match source. Immediate review required.");
+  }
+  if (allFlags.includes("numerical_distortion")) {
+    recommendations.push("Numerical values in AI output differ from source data. Verify all numbers manually.");
+  }
+  if (allFlags.includes("ungrounded_numbers")) {
+    recommendations.push("AI output contains numbers not present in source context. These may be fabricated.");
   }
 
   // --- Generate audit ID ---

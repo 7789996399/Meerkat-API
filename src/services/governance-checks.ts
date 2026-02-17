@@ -474,3 +474,118 @@ export async function claim_extraction_check(output: string, context: string): P
     detail: `Extracted ${claims} factual claim(s) (heuristic fallback). ${verified} verified, ${unverified} unverified.`,
   };
 }
+
+
+// ══════════════════════════════════════════════════════════════════
+// Numerical Verification (Check 5)
+// ══════════════════════════════════════════════════════════════════
+
+const NUMERICAL_SERVICE_URL = process.env.NUMERICAL_SERVICE_URL || "";
+
+interface NumericalMatchDetail {
+  source_value: number;
+  ai_value: number;
+  context: string;
+  context_type: string;
+  match: boolean;
+  deviation: number;
+  tolerance: number;
+  severity: string;
+}
+
+interface NumericalVerifyResponse {
+  score: number;
+  status: string;
+  numbers_found_in_source: number;
+  numbers_found_in_ai: number;
+  matches: NumericalMatchDetail[];
+  ungrounded_numbers: { value: number; raw: string; context: string }[];
+  critical_mismatches: number;
+  detail: string;
+  inference_time_ms: number;
+}
+
+export async function numerical_verify_check(
+  output: string,
+  context: string,
+  domain?: string,
+): Promise<CheckResult> {
+  // --- If service URL is configured, call the numerical verification service ---
+  if (NUMERICAL_SERVICE_URL) {
+    try {
+      const resp = await fetch(`${NUMERICAL_SERVICE_URL}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ai_output: output,
+          source_context: context || "",
+          domain: domain || "healthcare",
+        }),
+      });
+
+      if (!resp.ok) {
+        throw new Error(`Numerical verification service returned ${resp.status}`);
+      }
+
+      const data = (await resp.json()) as NumericalVerifyResponse;
+
+      const flags: string[] = [];
+      if (data.critical_mismatches > 0) flags.push("critical_numerical_mismatch");
+      if (data.status === "fail") flags.push("numerical_distortion");
+      if (data.status === "warning") flags.push("numerical_warning");
+      if (data.ungrounded_numbers.length > 0) flags.push("ungrounded_numbers");
+
+      return {
+        score: data.score,
+        flags,
+        detail: `Numerical verification: ${data.detail} ` +
+          `(${data.numbers_found_in_source} source, ${data.numbers_found_in_ai} AI, ` +
+          `${data.critical_mismatches} critical, ${data.inference_time_ms.toFixed(0)}ms)`,
+      };
+    } catch (err: any) {
+      console.error("[numerical_verify] Service call failed, falling back to heuristic:", err.message);
+      // Fall through to heuristic
+    }
+  }
+
+  // --- Heuristic fallback: simple regex number extraction and comparison ---
+  if (!context || context.trim().length === 0) {
+    return {
+      score: 1.0,
+      flags: [],
+      detail: "No source context provided for numerical verification.",
+    };
+  }
+
+  // Extract numbers from both texts
+  const numberRegex = /\d+(?:\.\d+)?/g;
+  const sourceNumbers = (context.match(numberRegex) || []).map(Number);
+  const aiNumbers = (output.match(numberRegex) || []).map(Number);
+
+  if (aiNumbers.length === 0) {
+    return {
+      score: 1.0,
+      flags: [],
+      detail: "No numbers found in AI output (heuristic fallback).",
+    };
+  }
+
+  // Simple: check if each AI number exists in source
+  let matched = 0;
+  for (const aiNum of aiNumbers) {
+    if (sourceNumbers.some(sn => Math.abs(sn - aiNum) / Math.max(Math.abs(sn), 0.001) < 0.02)) {
+      matched++;
+    }
+  }
+
+  const score = aiNumbers.length > 0 ? matched / aiNumbers.length : 1.0;
+  const flags: string[] = [];
+  if (score < 0.5) flags.push("numerical_distortion");
+  if (score < 1.0) flags.push("numerical_warning");
+
+  return {
+    score,
+    flags,
+    detail: `Numerical check (heuristic fallback): ${matched}/${aiNumbers.length} AI numbers found in source.`,
+  };
+}

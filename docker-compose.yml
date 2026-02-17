@@ -140,6 +140,22 @@ services:
     networks:
       - meerkat
 
+  # ── Numerical Verification microservice ──────────────────────────
+  meerkat-numerical:
+    build: ./meerkat-numerical-verify
+    ports:
+      - "8004:8004"
+    environment:
+      MEERKAT_LOG_LEVEL: info
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - meerkat
+
 volumes:
   pgdata:
   redisdata:
