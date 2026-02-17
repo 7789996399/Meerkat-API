@@ -18,6 +18,7 @@ import time
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 from .entailment_client import bidirectional_entailment, load_model
 from .entropy import compute_semantic_entropy, interpret_entropy
@@ -59,6 +60,67 @@ async def health():
         "ollama_url": OLLAMA_BASE_URL,
         "ollama_model": OLLAMA_MODEL,
     }
+
+
+# ── NLI Predict (used by claim-extractor and entailment checks) ───
+
+class PredictRequest(BaseModel):
+    premise: str
+    hypothesis: str
+
+class PredictResponse(BaseModel):
+    entailment: float
+    contradiction: float
+    neutral: float
+    label: str
+
+@app.post("/predict", response_model=PredictResponse)
+async def predict(req: PredictRequest):
+    """
+    Run NLI inference on a premise-hypothesis pair.
+    Returns probabilities for entailment, contradiction, neutral.
+    
+    This is the endpoint that the claim-extractor microservice
+    calls to verify individual claims against source context.
+    """
+    from .entailment_client import load_model
+    nli = load_model()
+    
+    try:
+        # DeBERTa-large-MNLI returns labels + scores
+        # We need to get all three class probabilities
+        results = await asyncio.to_thread(
+            nli,
+            f"{req.premise} [SEP] {req.hypothesis}",
+            truncation=True,
+            max_length=512,
+            top_k=None,  # Return all labels with scores
+        )
+        
+        # results is a list of dicts: [{"label": "ENTAILMENT", "score": 0.9}, ...]
+        scores = {"ENTAILMENT": 0.0, "CONTRADICTION": 0.0, "NEUTRAL": 0.0}
+        top_label = "NEUTRAL"
+        top_score = 0.0
+        
+        for r in results:
+            label = r["label"].upper()
+            if label in scores:
+                scores[label] = round(r["score"], 4)
+                if r["score"] > top_score:
+                    top_score = r["score"]
+                    top_label = label
+        
+        return PredictResponse(
+            entailment=scores["ENTAILMENT"],
+            contradiction=scores["CONTRADICTION"],
+            neutral=scores["NEUTRAL"],
+            label=top_label,
+        )
+    except Exception as e:
+        logger.error("NLI predict failed: %s", e)
+        return PredictResponse(
+            entailment=0.33, contradiction=0.33, neutral=0.34, label="NEUTRAL"
+        )
 
 
 # ── Ollama generation ──────────────────────────────────────────────

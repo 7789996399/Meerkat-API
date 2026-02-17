@@ -47,6 +47,7 @@ services:
       ENTROPY_SERVICE_URL: http://meerkat-entropy:8001
       CLAIMS_SERVICE_URL: http://meerkat-claims:8002
       PREFERENCE_SERVICE_URL: http://meerkat-preference:8003
+      NUMERICAL_SERVICE_URL: http://meerkat-numerical:8004
       MEERKAT_API_URL: http://meerkat-api:8000
     depends_on:
       postgres:
@@ -74,6 +75,7 @@ services:
       ENTROPY_SERVICE_URL: http://meerkat-entropy:8001
       CLAIMS_SERVICE_URL: http://meerkat-claims:8002
       PREFERENCE_SERVICE_URL: http://meerkat-preference:8003
+      NUMERICAL_SERVICE_URL: http://meerkat-numerical:8004
       DATABASE_URL: postgresql://meerkat:meerkat_dev@postgres:5432/meerkat
       REDIS_URL: redis://redis:6379
     depends_on:

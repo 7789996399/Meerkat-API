@@ -100,7 +100,7 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
   for (const check of checksToRun) {
     switch (check) {
       case "entailment":
-        checksResults.entailment = entailment_check(
+        checksResults.entailment = await entailment_check(
           output,
           context || "",
           knowledgeBaseUsed ? kbContext : undefined,

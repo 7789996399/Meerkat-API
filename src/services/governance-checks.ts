@@ -21,14 +21,24 @@ function rand(min: number, max: number): number {
   return Math.round((min + Math.random() * (max - min)) * 1000) / 1000;
 }
 
-// TODO: Replace with real DeBERTa-v3 ONNX model
-// Production: tokenize (premise=context, hypothesis=output), run NLI inference,
-// return entailment/contradiction/neutral probabilities per claim.
-export function entailment_check(
+const ENTAILMENT_URL = process.env.ENTROPY_SERVICE_URL
+  ? `${process.env.ENTROPY_SERVICE_URL}/predict`
+  : "";
+
+interface NLIPredictResponse {
+  entailment: number;
+  contradiction: number;
+  neutral: number;
+  label: string;
+}
+
+// Call DeBERTa NLI model via the semantic entropy service's /predict endpoint.
+// Falls back to word-overlap heuristic if the service is unavailable.
+export async function entailment_check(
   output: string,
   perRequestContext: string,
   knowledgeBaseContext?: string,
-): CheckResult {
+): Promise<CheckResult> {
   // Merge both context sources
   const contexts: string[] = [];
   if (perRequestContext && perRequestContext.trim().length > 0) {
@@ -48,7 +58,80 @@ export function entailment_check(
     };
   }
 
-  // Simulate: longer context overlap = higher score, with variance
+  const contextSources = contexts.length === 2
+    ? "per-request context + knowledge base"
+    : knowledgeBaseContext ? "knowledge base" : "per-request context";
+
+  // --- If entailment service is available, use real DeBERTa NLI ---
+  if (ENTAILMENT_URL) {
+    try {
+      // Split output into sentences for per-claim entailment
+      const sentences = output
+        .split(/(?<=[.!?])\s+/)
+        .map(s => s.trim())
+        .filter(s => s.length > 10);
+
+      if (sentences.length === 0) {
+        return {
+          score: 0.85,
+          flags: [],
+          detail: `NLI check (${contextSources}): No substantial claims to verify.`,
+        };
+      }
+
+      let totalEntailment = 0;
+      let contradictions = 0;
+      const contradictedClaims: string[] = [];
+
+      for (const sentence of sentences) {
+        const resp = await fetch(ENTAILMENT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            premise: combinedContext,
+            hypothesis: sentence,
+          }),
+        });
+
+        if (!resp.ok) {
+          throw new Error(`Entailment service returned ${resp.status}`);
+        }
+
+        const data = (await resp.json()) as NLIPredictResponse;
+        totalEntailment += data.entailment;
+
+        if (data.label === "CONTRADICTION" && data.contradiction > 0.5) {
+          contradictions++;
+          contradictedClaims.push(sentence.slice(0, 80));
+        }
+      }
+
+      const avgEntailment = totalEntailment / sentences.length;
+      // Score: high entailment = good. Penalise contradictions heavily.
+      let score = avgEntailment - (contradictions / sentences.length) * 0.5;
+      score = Math.max(0, Math.min(1, score));
+
+      const flags: string[] = [];
+      if (contradictions > 0) flags.push("entailment_contradiction");
+      if (score < 0.6) flags.push("low_entailment");
+
+      const contradictionDetail = contradictedClaims.length > 0
+        ? ` Contradicted: [${contradictedClaims.join("; ")}].`
+        : "";
+
+      return {
+        score,
+        flags,
+        detail: `NLI check (DeBERTa, ${contextSources}): ${sentences.length} claim(s), ` +
+          `avg entailment ${avgEntailment.toFixed(3)}, ${contradictions} contradiction(s).${contradictionDetail}`,
+      };
+    } catch (err: any) {
+      console.error("[entailment] Service call failed, falling back to heuristic:", err.message);
+      // Fall through to heuristic
+    }
+  }
+
+  // --- Heuristic fallback (word overlap) ---
   const outputWords = new Set(output.toLowerCase().split(/\s+/));
   const contextWords = new Set(combinedContext.toLowerCase().split(/\s+/));
   let overlap = 0;
@@ -57,7 +140,6 @@ export function entailment_check(
   }
   const overlapRatio = overlap / Math.max(outputWords.size, 1);
 
-  // Base score from overlap, plus random noise
   let score = Math.min(overlapRatio * 2.5, 1.0) + rand(-0.15, 0.15);
   score = Math.max(0, Math.min(1, score));
 
@@ -65,27 +147,23 @@ export function entailment_check(
   if (score < 0.4) flags.push("entailment_contradiction");
   if (score < 0.6) flags.push("low_entailment");
 
-  const contextSources = contexts.length === 2
-    ? "per-request context + knowledge base"
-    : knowledgeBaseContext ? "knowledge base" : "per-request context";
-
   return {
     score,
     flags,
-    detail: `NLI check (${contextSources}): ${overlap} grounded terms across ${outputWords.size} output tokens. Entailment score: ${score.toFixed(3)}.`,
+    detail: `NLI check (heuristic fallback, ${contextSources}): ${overlap} grounded terms across ${outputWords.size} output tokens. Score: ${score.toFixed(3)}.`,
   };
 }
 
-const SEMANTIC_ENTROPY_URL = process.env.MEERKAT_SEMANTIC_ENTROPY_URL || "";
+const SEMANTIC_ENTROPY_URL = process.env.ENTROPY_SERVICE_URL || "";
 
 interface SemanticEntropyResponse {
   semantic_entropy: number;
+  raw_entropy: number;
   num_clusters: number;
   num_completions: number;
   interpretation: string;
-  reference_answer_cluster: number;
-  reference_in_majority: boolean;
-  entailment_calls: number;
+  ai_output_cluster: number;
+  ai_output_in_majority: boolean;
   inference_time_ms: number;
 }
 
@@ -93,27 +171,20 @@ export async function semantic_entropy_check(input: string, output: string): Pro
   // --- If service URL is configured, call the real semantic entropy service ---
   if (SEMANTIC_ENTROPY_URL) {
     try {
-      // TODO: Replace mock completions with real LLM sampling.
-      // Production: call the AI model API N times with temperature=0.7 to get
-      // diverse sampled completions for the same input prompt. For example:
-      //   const completions = await Promise.all(
-      //     Array.from({ length: 10 }, () =>
-      //       callLLM({ prompt: input, temperature: 0.7, max_tokens: 512 })
-      //     )
-      //   );
-      const mockCompletions = generateMockCompletions(output, 10);
-
-      // TODO: Replace with real entailment service URL from config/env
-      const entailmentUrl = process.env.MEERKAT_ENTAILMENT_URL || "http://localhost:8001/predict";
+      // The Python microservice handles everything:
+      // 1. Generates N completions via Ollama at temperature=1.0
+      // 2. Clusters by bidirectional entailment (DeBERTa)
+      // 3. Computes Shannon entropy over clusters
+      // We just send the question, AI output, and optional source context.
 
       const resp = await fetch(`${SEMANTIC_ENTROPY_URL}/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question: input,
-          reference_answer: output,
-          sampled_completions: mockCompletions,
-          entailment_url: entailmentUrl,
+          ai_output: output,
+          source_context: null,
+          num_completions: 10,
         }),
       });
 
@@ -132,10 +203,10 @@ export async function semantic_entropy_check(input: string, output: string): Pro
       else if (data.interpretation === "high_uncertainty") flags.push("high_uncertainty");
       else if (data.interpretation === "moderate_uncertainty") flags.push("moderate_uncertainty");
 
-      if (!data.reference_in_majority && data.reference_answer_cluster !== -1) {
+      if (!data.ai_output_in_majority && data.ai_output_cluster !== -1) {
         flags.push("reference_minority_cluster");
       }
-      if (data.reference_answer_cluster === -1) {
+      if (data.ai_output_cluster === -1) {
         flags.push("reference_no_cluster_match");
       }
 
@@ -145,8 +216,8 @@ export async function semantic_entropy_check(input: string, output: string): Pro
         detail: `Semantic entropy (Farquhar et al.): SE=${data.semantic_entropy.toFixed(3)}, ` +
           `${data.num_clusters} clusters from ${data.num_completions} samples, ` +
           `interpretation=${data.interpretation}, ` +
-          `reference_in_majority=${data.reference_in_majority}, ` +
-          `${data.entailment_calls} entailment calls in ${data.inference_time_ms.toFixed(0)}ms.`,
+          `ai_output_in_majority=${data.ai_output_in_majority}, ` +
+          `${data.inference_time_ms.toFixed(0)}ms.`,
       };
     } catch (err: any) {
       console.error("[semantic_entropy] Service call failed, falling back to heuristic:", err.message);
@@ -173,31 +244,7 @@ export async function semantic_entropy_check(input: string, output: string): Pro
   };
 }
 
-/**
- * Generate mock sampled completions by perturbing the reference output.
- * TODO: Replace with real LLM multi-sampling at temperature > 0.
- */
-function generateMockCompletions(reference: string, n: number): string[] {
-  const completions: string[] = [];
-  const words = reference.split(/\s+/);
-
-  for (let i = 0; i < n; i++) {
-    // Create slight variations: shuffle some words, drop some, add hedging
-    const variant = [...words];
-    // Randomly drop ~10% of words for variation
-    const filtered = variant.filter(() => Math.random() > 0.1);
-    // Occasionally add a hedge word
-    if (Math.random() < 0.3) {
-      const hedges = ["perhaps", "likely", "approximately", "generally"];
-      filtered.splice(Math.floor(Math.random() * filtered.length), 0, hedges[i % hedges.length]);
-    }
-    completions.push(filtered.join(" "));
-  }
-
-  return completions;
-}
-
-const IMPLICIT_PREFERENCE_URL = process.env.MEERKAT_IMPLICIT_PREFERENCE_URL || "";
+const IMPLICIT_PREFERENCE_URL = process.env.PREFERENCE_SERVICE_URL || "";
 
 interface ImplicitPreferenceResponse {
   score: number;
@@ -293,7 +340,7 @@ export async function implicit_preference_check(
   };
 }
 
-const CLAIM_EXTRACTOR_URL = process.env.MEERKAT_CLAIM_EXTRACTOR_URL || "";
+const CLAIM_EXTRACTOR_URL = process.env.CLAIMS_SERVICE_URL || "";
 
 interface ClaimExtractorClaim {
   claim_id: number;
@@ -319,7 +366,10 @@ export async function claim_extraction_check(output: string, context: string): P
   // --- If service URL is configured, call the claim extractor service ---
   if (CLAIM_EXTRACTOR_URL) {
     try {
-      const entailmentUrl = process.env.MEERKAT_ENTAILMENT_URL || "http://localhost:8001/predict";
+      // Entailment service (/predict) lives on the entropy service
+      const entailmentUrl = process.env.ENTROPY_SERVICE_URL
+        ? `${process.env.ENTROPY_SERVICE_URL}/predict`
+        : "http://localhost:8001/predict";
 
       const resp = await fetch(`${CLAIM_EXTRACTOR_URL}/extract`, {
         method: "POST",
