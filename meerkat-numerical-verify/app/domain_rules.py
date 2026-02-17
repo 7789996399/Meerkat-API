@@ -49,6 +49,11 @@ HEALTHCARE_RULES: dict[str, ToleranceRule] = {
         severity="medium",
         description="Patient age must match exactly",
     ),
+    "duration_months": ToleranceRule(
+        tolerance=0.0,
+        severity="critical",
+        description="Treatment durations must match exactly (e.g., antibiotic courses)",
+    ),
     "default": ToleranceRule(
         tolerance=0.01,
         severity="medium",

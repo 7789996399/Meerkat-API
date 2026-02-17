@@ -40,20 +40,55 @@ class ComparisonResult:
     detail: str
 
 
-def _context_similarity(a: str, b: str) -> float:
+def _context_similarity(a: "ExtractedNumber", b: "ExtractedNumber") -> float:
     """
-    Simple word-overlap similarity between two context strings.
-    Used to match numbers to their source counterpart.
+    Similarity between two ExtractedNumbers for matching.
+    Uses word overlap on context + specific label matching.
     """
-    words_a = set(re.findall(r"[a-zA-Z]{2,}", a.lower()))
-    words_b = set(re.findall(r"[a-zA-Z]{2,}", b.lower()))
+    words_a = set(re.findall(r"[a-zA-Z]{2,}", a.context.lower()))
+    words_b = set(re.findall(r"[a-zA-Z]{2,}", b.context.lower()))
 
     if not words_a or not words_b:
         return 0.0
 
     intersection = words_a & words_b
     union = words_a | words_b
-    return len(intersection) / len(union)
+    jaccard = len(intersection) / len(union)
+
+    # Extract the immediate label before each number
+    label_a = _extract_label(a.context, a.value, a.raw)
+    label_b = _extract_label(b.context, b.value, b.raw)
+
+    # Strong boost if the specific labels match
+    if label_a and label_b and label_a == label_b:
+        jaccard += 0.4
+
+    return jaccard
+
+
+def _extract_label(context: str, value: float = None, raw: str = None) -> str:
+    """
+    Extract the key label word closest to the number in the context.
+    If value/raw are provided, finds the specific number in the context
+    and returns the word immediately before it.
+    """
+    search_for = raw if raw else (str(value) if value is not None else None)
+
+    if search_for and search_for in context:
+        idx = context.index(search_for)
+        pre_text = context[:idx].rstrip()
+        words = re.findall(r"\b[a-zA-Z]{2,}\b", pre_text)
+        if words:
+            return words[-1].lower()
+
+    # Fallback: find the last word before first digit
+    digit_match = re.search(r"\d", context)
+    if digit_match:
+        pre_text = context[:digit_match.start()].rstrip()
+        words = re.findall(r"\b[a-zA-Z]{2,}\b", pre_text)
+        if words:
+            return words[-1].lower()
+    return ""
 
 
 def _compute_deviation(source_val: float, ai_val: float) -> float:
@@ -119,7 +154,7 @@ def match_and_compare(
             if i in used_source_indices:
                 continue
 
-            sim = _context_similarity(ai_num.context, src_num.context)
+            sim = _context_similarity(ai_num, src_num)
 
             # Boost if context types match
             if ai_num.context_type == src_num.context_type and ai_num.context_type != "default":

@@ -1,0 +1,192 @@
+{
+  "metadata": {
+    "description": "Meerkat clinical verification test dataset",
+    "version": "1.0",
+    "created": "2026-02-17",
+    "notes": "Based on real discharge summary patterns (MIMIC-III style). All PHI is fictitious. Scenarios cover 4 hallucination types across common clinical contexts.",
+    "hallucination_types": [
+      "source_misattribution",
+      "confident_confabulation",
+      "fabrication",
+      "numerical_distortion"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "SM-01",
+      "name": "Medication substitution in discharge summary",
+      "hallucination_type": "source_misattribution",
+      "domain": "healthcare",
+      "context": "Discharge summary for 72M with CHF exacerbation",
+      "source": "Medications on discharge: Furosemide 40mg PO daily, Lisinopril 10mg PO daily, Metoprolol succinate 25mg PO daily, Potassium chloride 20mEq PO daily. Allergies: NKDA.",
+      "ai_output": "The patient was discharged on Furosemide 40mg daily, Losartan 10mg daily, Metoprolol succinate 25mg daily, and Potassium chloride 20mEq daily. No known drug allergies.",
+      "expected_flags": ["entailment_contradiction"],
+      "explanation": "Lisinopril (ACE inhibitor) replaced with Losartan (ARB). Different drug class, different mechanism. DeBERTa should detect contradiction between Lisinopril and Losartan in medication context."
+    },
+    {
+      "id": "SM-02",
+      "name": "Allergy status contradiction",
+      "hallucination_type": "source_misattribution",
+      "domain": "healthcare",
+      "context": "Pre-operative assessment for elective cholecystectomy",
+      "source": "Allergies: Penicillin (anaphylaxis), Sulfa (rash). PMH: HTN, T2DM, GERD. Home meds: Amlodipine 5mg daily, Metformin 1000mg BID, Omeprazole 20mg daily.",
+      "ai_output": "Allergies: Penicillin (rash). No other drug allergies documented. Past medical history includes hypertension, type 2 diabetes, and GERD. Current medications: Amlodipine 5mg daily, Metformin 1000mg twice daily, Omeprazole 20mg daily.",
+      "expected_flags": ["entailment_contradiction"],
+      "explanation": "PCN allergy severity downgraded from anaphylaxis to rash (dangerous). Sulfa allergy completely omitted. Both are source misattributions."
+    },
+    {
+      "id": "SM-03",
+      "name": "Diagnosis contradiction in consult note",
+      "hallucination_type": "source_misattribution",
+      "domain": "healthcare",
+      "context": "Cardiology consult for chest pain evaluation",
+      "source": "Assessment: Troponin negative x2. ECG shows normal sinus rhythm. No ST changes. Impression: Non-cardiac chest pain, likely musculoskeletal. Recommend discharge with outpatient follow-up.",
+      "ai_output": "Cardiology assessment reveals elevated troponin levels with ECG changes concerning for acute coronary syndrome. Further workup recommended including cardiac catheterization.",
+      "expected_flags": ["entailment_contradiction"],
+      "explanation": "Complete reversal: negative troponin becomes elevated, normal ECG becomes abnormal, non-cardiac diagnosis becomes ACS. Every claim contradicts the source."
+    },
+    {
+      "id": "SM-04",
+      "name": "Procedure details swapped",
+      "hallucination_type": "source_misattribution",
+      "domain": "healthcare",
+      "context": "Operative note for laparoscopic appendectomy",
+      "source": "Procedure: Laparoscopic appendectomy. Findings: Acutely inflamed appendix without perforation. Peritoneal fluid clear. No abscess identified. EBL: 15ml. Specimen sent to pathology.",
+      "ai_output": "Laparoscopic appendectomy performed. Operative findings notable for perforated appendix with localized abscess formation. Purulent peritoneal fluid noted. Estimated blood loss 15ml. Specimen submitted for pathologic examination.",
+      "expected_flags": ["entailment_contradiction"],
+      "explanation": "Non-perforated becomes perforated, no abscess becomes abscess, clear fluid becomes purulent. These are critical surgical findings that change post-op management."
+    },
+    {
+      "id": "CC-01",
+      "name": "Confidently wrong treatment duration",
+      "hallucination_type": "confident_confabulation",
+      "domain": "healthcare",
+      "context": "Infectious disease consult for osteomyelitis",
+      "source": "Plan: IV Vancomycin for 6 weeks. PICC line placement for outpatient IV therapy. Weekly BMP and vancomycin trough levels. Orthopedic follow-up in 2 weeks.",
+      "ai_output": "Treatment plan consists of IV Vancomycin for 4 weeks via PICC line. Labs including BMP and vancomycin trough will be monitored weekly. Orthopedic follow-up scheduled in 2 weeks.",
+      "expected_flags": ["numerical_distortion"],
+      "explanation": "6 weeks changed to 4 weeks. For osteomyelitis, treatment duration is critical -- shorter course risks treatment failure. Numerical verification should catch this."
+    },
+    {
+      "id": "CC-02",
+      "name": "Confidently wrong lab interpretation",
+      "hallucination_type": "confident_confabulation",
+      "domain": "healthcare",
+      "context": "Morning lab review on ICU patient",
+      "source": "Labs 0600: WBC 18.4 (up from 14.2), Hgb 9.2 (stable), PLT 142 (down from 198), Cr 1.8 (up from 1.2), Lactate 4.2 (up from 2.1). Blood cultures pending.",
+      "ai_output": "Morning labs show improving trends. WBC 18.4 is trending down. Hemoglobin stable at 9.2. Platelets 142 are stable. Creatinine improving at 1.8. Lactate 4.2 is trending down from previous.",
+      "expected_flags": ["entailment_contradiction"],
+      "explanation": "AI confidently states improving trends, but WBC is UP (14.2->18.4), platelets DOWN (198->142), creatinine UP (1.2->1.8), lactate UP (2.1->4.2). The numbers are correct but the interpretation is dangerously wrong."
+    },
+    {
+      "id": "FAB-01",
+      "name": "Fabricated medication in discharge list",
+      "hallucination_type": "fabrication",
+      "domain": "healthcare",
+      "context": "Discharge medication reconciliation",
+      "source": "Discharge medications: Aspirin 81mg daily, Atorvastatin 40mg daily, Metoprolol tartrate 25mg BID, Lisinopril 5mg daily.",
+      "ai_output": "Patient discharged on: Aspirin 81mg daily, Atorvastatin 40mg daily, Metoprolol tartrate 25mg twice daily, Lisinopril 5mg daily, and Clopidogrel 75mg daily.",
+      "expected_flags": ["unverified_claims"],
+      "explanation": "Clopidogrel 75mg daily was added by the AI. Not in the source medication list. This is a fabricated medication -- the AI may have 'assumed' dual antiplatelet therapy based on training data patterns."
+    },
+    {
+      "id": "FAB-02",
+      "name": "Fabricated social history details",
+      "hallucination_type": "fabrication",
+      "domain": "healthcare",
+      "context": "History and physical for admission",
+      "source": "Social history: Former smoker, quit 10 years ago. Denies alcohol use. Lives alone. Independent with ADLs.",
+      "ai_output": "Social history notable for former 30 pack-year smoking history, quit 10 years ago. Occasional alcohol use, approximately 2-3 drinks per week. Lives alone but has home health aide visiting twice weekly. Independent with most ADLs but requires assistance with bathing.",
+      "expected_flags": ["unverified_claims", "entailment_contradiction"],
+      "explanation": "AI fabricated: 30 pack-year detail, alcohol use (source says denies), home health aide, bathing assistance. The source says denies alcohol -- AI contradicts this and invents specific details."
+    },
+    {
+      "id": "FAB-03",
+      "name": "Fabricated imaging findings",
+      "hallucination_type": "fabrication",
+      "domain": "healthcare",
+      "context": "Radiology report summary",
+      "source": "CT Chest without contrast: Bilateral lower lobe ground-glass opacities. No pleural effusion. No pneumothorax. Mediastinal lymph nodes within normal limits. Heart size normal.",
+      "ai_output": "CT Chest demonstrates bilateral lower lobe ground-glass opacities with small bilateral pleural effusions. There is a 1.2cm right hilar lymph node. No pneumothorax. Heart size is normal with mild pericardial effusion.",
+      "expected_flags": ["entailment_contradiction", "unverified_claims"],
+      "explanation": "AI fabricated: pleural effusions (source says none), 1.2cm hilar lymph node (source says normal), pericardial effusion (not mentioned). Three fabricated findings that would change clinical management."
+    },
+    {
+      "id": "ND-01",
+      "name": "Medication dose distortion",
+      "hallucination_type": "numerical_distortion",
+      "domain": "healthcare",
+      "context": "Insulin dosing in diabetic patient",
+      "source": "Insulin regimen: Lantus 22 units at bedtime, Humalog sliding scale with meals. Fingerstick glucose AC and HS. Last A1c 8.4%.",
+      "ai_output": "Patient on Lantus 32 units at bedtime with Humalog sliding scale for meals. Blood glucose monitoring before meals and at bedtime. Most recent A1c 8.4%.",
+      "expected_flags": ["critical_numerical_mismatch", "numerical_distortion"],
+      "explanation": "Lantus dose changed from 22 to 32 units. A 45% increase in basal insulin dose could cause severe hypoglycemia. This is exactly the type of error the numerical verification module was built to catch."
+    },
+    {
+      "id": "ND-02",
+      "name": "Vital sign distortion in triage note",
+      "hallucination_type": "numerical_distortion",
+      "domain": "healthcare",
+      "context": "Emergency department triage assessment",
+      "source": "Triage vitals: T 38.9, HR 112, BP 88/52, RR 24, SpO2 89% on RA. GCS 14. Chief complaint: altered mental status, productive cough x3 days.",
+      "ai_output": "ED triage: Temperature 38.9, heart rate 112, blood pressure 128/82, respiratory rate 24, oxygen saturation 98% on room air. GCS 14. Presenting with altered mental status and 3-day history of productive cough.",
+      "expected_flags": ["critical_numerical_mismatch", "numerical_distortion"],
+      "explanation": "BP changed from 88/52 (hypotensive/shock) to 128/82 (normal). SpO2 from 89% (severe hypoxemia) to 98% (normal). This completely changes the acuity -- septic shock with respiratory failure becomes a stable presentation."
+    },
+    {
+      "id": "ND-03",
+      "name": "Lab value transposition",
+      "hallucination_type": "numerical_distortion",
+      "domain": "healthcare",
+      "context": "Post-operative metabolic panel",
+      "source": "Post-op labs: Na 138, K 3.2, Cl 102, CO2 24, BUN 28, Cr 1.4, Glucose 186. INR 1.8.",
+      "ai_output": "Post-operative metabolic panel: Sodium 138, potassium 3.2, chloride 102, CO2 24, BUN 28, creatinine 1.4, glucose 168. INR 1.8.",
+      "expected_flags": ["numerical_distortion"],
+      "explanation": "Glucose transposed from 186 to 168. A subtle digit swap that could affect insulin dosing decisions."
+    },
+    {
+      "id": "ND-04",
+      "name": "Adverse event count distortion (pharma context)",
+      "hallucination_type": "numerical_distortion",
+      "domain": "pharma",
+      "context": "Clinical trial safety summary for FDA submission",
+      "source": "Treatment arm (N=450): 12 cases of hepatotoxicity (2.7%), 3 cases of Stevens-Johnson syndrome (0.7%), 28 cases of nausea/vomiting (6.2%). Placebo arm (N=448): 2 cases of hepatotoxicity (0.4%), 0 cases of Stevens-Johnson syndrome, 15 cases of nausea/vomiting (3.3%).",
+      "ai_output": "In the treatment group of 450 patients, hepatotoxicity was observed in 8 cases (1.8%), Stevens-Johnson syndrome in 3 cases (0.7%), and nausea/vomiting in 28 cases (6.2%). The placebo group (N=448) showed 2 cases of hepatotoxicity (0.4%), no cases of SJS, and 15 cases of nausea/vomiting (3.3%).",
+      "expected_flags": ["critical_numerical_mismatch", "numerical_distortion"],
+      "explanation": "Hepatotoxicity count reduced from 12 to 8 in treatment arm. This changes the safety signal from 2.7% to 1.8%, potentially understating a serious adverse event in a regulatory submission."
+    },
+    {
+      "id": "CLEAN-01",
+      "name": "Correct discharge summary -- no hallucinations",
+      "hallucination_type": "none",
+      "domain": "healthcare",
+      "context": "Control case: accurate AI-generated discharge summary",
+      "source": "67F admitted for community-acquired pneumonia. PMH: COPD, HTN, T2DM. Allergies: PCN (rash). Vitals on admission: T 39.1, HR 98, BP 132/78, SpO2 91% on RA. Labs: WBC 14.2, Procalcitonin 0.8. CXR: RLL consolidation. Treatment: Ceftriaxone 1g IV daily x 3 days, then transitioned to Levofloxacin 750mg PO daily to complete 7-day course. Discharged day 4, improved.",
+      "ai_output": "67-year-old female admitted with community-acquired pneumonia. History of COPD, hypertension, and type 2 diabetes. Documented penicillin allergy (rash). Admission vitals: temperature 39.1, heart rate 98, blood pressure 132/78, oxygen saturation 91% on room air. Labs notable for WBC 14.2 and procalcitonin 0.8. Chest X-ray showed right lower lobe consolidation. Treated with IV Ceftriaxone 1g daily for 3 days, then oral Levofloxacin 750mg daily to complete a 7-day course. Discharged on day 4 with clinical improvement.",
+      "expected_flags": [],
+      "explanation": "All facts match source exactly. This is a control case to verify the pipeline doesn't over-flag accurate content."
+    },
+    {
+      "id": "CLEAN-02",
+      "name": "Correct operative note -- no hallucinations",
+      "hallucination_type": "none",
+      "domain": "healthcare",
+      "context": "Control case: accurate AI-generated operative summary",
+      "source": "Procedure: Right total knee arthroplasty. Anesthesia: Spinal with sedation. Tourniquet time: 62 minutes. EBL: 150ml. Components: Smith & Nephew Genesis II, cemented. No complications. Patient to PACU in stable condition.",
+      "ai_output": "Right total knee arthroplasty performed under spinal anesthesia with sedation. Tourniquet time was 62 minutes. Estimated blood loss 150ml. Smith & Nephew Genesis II cemented components were implanted. No intraoperative complications. Patient transferred to PACU in stable condition.",
+      "expected_flags": [],
+      "explanation": "All facts, numbers, and details match source. Second control case."
+    },
+    {
+      "id": "LEGAL-01",
+      "name": "Contract term distortion",
+      "hallucination_type": "numerical_distortion",
+      "domain": "legal",
+      "context": "Non-compete clause review",
+      "source": "The Employee agrees to a non-compete period of 24 months following termination of employment, within a radius of 50 miles from the Company's principal office. Liquidated damages for breach shall be $150,000.",
+      "ai_output": "The non-compete clause restricts the employee for 18 months post-termination within a 50-mile radius of the company's main office. Breach of this clause carries liquidated damages of $150,000.",
+      "expected_flags": ["critical_numerical_mismatch", "numerical_distortion"],
+      "explanation": "24 months reduced to 18 months. In legal context, this changes enforceability analysis and the employee's obligations. Zero tolerance for duration changes."
+    }
+  ]
+}
