@@ -1,0 +1,56 @@
+{
+  "$schema": "https://meerkat.ai/schemas/openclaw-skill-config.json",
+  "version": "1.0.0",
+  "api": {
+    "base_url": "https://api.meerkat.ai",
+    "timeout_ms": 5000,
+    "retry_count": 2
+  },
+  "ingress": {
+    "enabled": true,
+    "sensitivity": "high",
+    "auto_block_threshold": "HIGH",
+    "scan_sources": [
+      "email",
+      "web_content",
+      "documents",
+      "forwarded_messages",
+      "skill_descriptions",
+      "calendar_invites"
+    ],
+    "bypass_trusted_contacts": false
+  },
+  "egress": {
+    "enabled": true,
+    "block_threshold": 40,
+    "flag_threshold": 70,
+    "auto_approve_threshold": 70,
+    "checks": [
+      "entailment",
+      "numerical_verify",
+      "semantic_entropy",
+      "implicit_preference",
+      "claim_extraction"
+    ],
+    "require_verification": [
+      "send_email",
+      "send_message",
+      "execute_command",
+      "modify_file",
+      "post_public",
+      "financial_transaction",
+      "share_resource",
+      "calendar_modify",
+      "run_code"
+    ]
+  },
+  "audit": {
+    "enabled": true,
+    "log_all_checks": true,
+    "retention_days": 90
+  },
+  "fallback": {
+    "on_api_unreachable": "require_user_confirmation",
+    "on_timeout": "require_user_confirmation"
+  }
+}

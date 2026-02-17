@@ -1,0 +1,39 @@
+{
+  "name": "@meerkat-ai/openclaw",
+  "version": "0.1.0",
+  "description": "Meerkat AI governance interceptor for OpenClaw agents",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "tsx tests/test_interceptor.ts"
+  },
+  "keywords": [
+    "meerkat",
+    "openclaw",
+    "clawdbot",
+    "moltbot",
+    "ai-governance",
+    "prompt-injection",
+    "hallucination-detection",
+    "ai-security",
+    "ai-safety",
+    "mcp"
+  ],
+  "author": "Meerkat AI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/7789996399/Meerkat-API",
+    "directory": "openclaw"
+  },
+  "homepage": "https://meerkat.ai",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/",
+    "skill/",
+    "README.md"
+  ]
+}
