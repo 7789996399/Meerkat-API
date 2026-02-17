@@ -35,3 +35,8 @@ htmlcov/
 
 # Logs
 *.log
+-e 
+# Production secrets
+.env.prod
+.env.local
+.env.production

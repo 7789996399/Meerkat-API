@@ -1,0 +1,193 @@
+# Meerkat API -- Production Docker Compose
+#
+# Architecture:
+#   Internet --> meerkat-node (Express, port 3000) --> 4 Python microservices
+#                    |                                     |
+#                    +--> PostgreSQL (pgvector)             +-- meerkat-entropy (DeBERTa, 8001)
+#                    +--> Redis (job queue)                 +-- meerkat-claims (spaCy, 8002)
+#                                                          +-- meerkat-preference (DistilBERT, 8003)
+#                                                          +-- meerkat-numerical (regex, 8004)
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up --build
+#
+# For Azure Container Apps:
+#   Each service deploys as a separate container app within the same environment.
+#   Internal services (microservices, postgres, redis) are not publicly exposed.
+#   Only meerkat-node gets a public ingress.
+
+services:
+  # ── PostgreSQL with pgvector ──────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-meerkat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-meerkat}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-meerkat}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - meerkat
+    restart: unless-stopped
+
+  # ── Redis (job queue / rate limiting cache) ───────────────────────
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - meerkat
+    restart: unless-stopped
+
+  # ── Node.js API Gateway (the single public entry point) ──────────
+  meerkat-node:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    ports:
+      - "${API_PORT:-3000}:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-meerkat}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meerkat}
+      REDIS_URL: redis://redis:6379
+      # Python microservices (internal network)
+      ENTROPY_SERVICE_URL: http://meerkat-entropy:8001
+      CLAIMS_SERVICE_URL: http://meerkat-claims:8002
+      PREFERENCE_SERVICE_URL: http://meerkat-preference:8003
+      NUMERICAL_SERVICE_URL: http://meerkat-numerical:8004
+      # Auth
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-}
+      MICROSOFT_REDIRECT_URI: ${MICROSOFT_REDIRECT_URI:-}
+      # Billing
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      # Embeddings (for knowledge base)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Frontend URL (for CORS)
+      FRONTEND_URL: ${FRONTEND_URL:-https://app.meerkat.ai}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meerkat-entropy:
+        condition: service_healthy
+      meerkat-numerical:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - meerkat
+    restart: unless-stopped
+
+  # ── Semantic Entropy (DeBERTa NLI + entropy analysis) ────────────
+  #    Heaviest service: downloads ~400MB DeBERTa model at build time
+  #    Provides: /predict (entailment), /analyze (semantic entropy)
+  meerkat-entropy:
+    build: ./meerkat-semantic-entropy
+    environment:
+      MEERKAT_LOG_LEVEL: ${LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - meerkat
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  # ── Claim Extractor (spaCy NER + entailment verification) ────────
+  #    Downloads en_core_web_trf (~400MB) at build time
+  #    Provides: /extract (claim extraction + verification)
+  meerkat-claims:
+    build: ./meerkat-claim-extractor
+    environment:
+      MEERKAT_LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Points at entropy service for entailment checking
+      ENTAILMENT_URL: http://meerkat-entropy:8001/predict
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - meerkat
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+
+  # ── Implicit Preference (DistilBERT sentiment + bias detection) ──
+  #    Lighter model (~300MB)
+  #    Provides: /analyze (sentiment + directional bias)
+  meerkat-preference:
+    build: ./meerkat-implicit-preference
+    environment:
+      MEERKAT_LOG_LEVEL: ${LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - meerkat
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # ── Numerical Verification (regex extraction + comparison) ───────
+  #    No ML models -- pure regex and arithmetic. Fastest service.
+  #    Provides: /verify (numerical mismatch detection)
+  meerkat-numerical:
+    build: ./meerkat-numerical-verify
+    environment:
+      MEERKAT_LOG_LEVEL: ${LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - meerkat
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  meerkat:
+    driver: bridge

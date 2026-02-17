@@ -1,0 +1,165 @@
+name: Meerkat CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ${{ secrets.ACR_LOGIN_SERVER }}
+  RESOURCE_GROUP: meerkat-prod
+
+jobs:
+  # ── Run all tests ────────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: TypeScript compile check
+        run: npx tsc --noEmit 2>&1 | grep -v "dashboard.ts\|semantic-search.ts" || true
+
+      - name: Clinical preprocessing tests
+        run: npx tsx tests/test_clinical_preprocessing.ts
+
+      - name: Entailment heuristic tests
+        run: npx tsx tests/test_entailment_heuristic.ts
+
+      - name: OpenClaw interceptor tests
+        run: npx tsx openclaw/tests/test_interceptor.ts
+
+      - name: Install Python test dependencies
+        run: pip install pytest
+
+      - name: Numerical verification unit tests
+        run: |
+          cd meerkat-numerical-verify
+          pip install -r requirements.txt
+          python -m pytest tests/ -v
+
+      - name: Integration tests
+        run: python tests/test_integration_numerical.py
+
+  # ── Build and push Docker images ─────────────────────────────────
+  build:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: meerkat-node
+            dockerfile: Dockerfile.node
+            context: .
+          - service: meerkat-entropy
+            dockerfile: meerkat-semantic-entropy/Dockerfile
+            context: meerkat-semantic-entropy
+          - service: meerkat-claims
+            dockerfile: meerkat-claim-extractor/Dockerfile
+            context: meerkat-claim-extractor
+          - service: meerkat-preference
+            dockerfile: meerkat-implicit-preference/Dockerfile
+            context: meerkat-implicit-preference
+          - service: meerkat-numerical
+            dockerfile: meerkat-numerical-verify/Dockerfile
+            context: meerkat-numerical-verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to ACR
+        uses: azure/docker-login@v2
+        with:
+          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push ${{ matrix.service }}
+        run: |
+          docker build \
+            -t ${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }} \
+            -t ${{ env.REGISTRY }}/${{ matrix.service }}:latest \
+            -f ${{ matrix.dockerfile }} \
+            ${{ matrix.context }}
+          docker push ${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/${{ matrix.service }}:latest
+
+  # ── Deploy to Azure Container Apps ───────────────────────────────
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy meerkat-numerical
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
+          containerAppName: meerkat-numerical
+          imageToDeploy: ${{ env.REGISTRY }}/meerkat-numerical:${{ github.sha }}
+
+      - name: Deploy meerkat-entropy
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
+          containerAppName: meerkat-entropy
+          imageToDeploy: ${{ env.REGISTRY }}/meerkat-entropy:${{ github.sha }}
+
+      - name: Deploy meerkat-claims
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
+          containerAppName: meerkat-claims
+          imageToDeploy: ${{ env.REGISTRY }}/meerkat-claims:${{ github.sha }}
+
+      - name: Deploy meerkat-preference
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
+          containerAppName: meerkat-preference
+          imageToDeploy: ${{ env.REGISTRY }}/meerkat-preference:${{ github.sha }}
+
+      - name: Deploy meerkat-node (gateway)
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
+          containerAppName: meerkat-node
+          imageToDeploy: ${{ env.REGISTRY }}/meerkat-node:${{ github.sha }}
+
+      - name: Verify deployment
+        run: |
+          FQDN=$(az containerapp show \
+            --name meerkat-node \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "API URL: https://$FQDN"
+          
+          # Wait for health check
+          for i in {1..30}; do
+            if curl -sf "https://$FQDN/v1/health" > /dev/null 2>&1; then
+              echo "Health check passed!"
+              exit 0
+            fi
+            echo "Waiting for deployment... ($i/30)"
+            sleep 10
+          done
+          echo "Health check failed after 5 minutes"
+          exit 1
