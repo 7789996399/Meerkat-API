@@ -25,7 +25,7 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
       data: {
         orgId: req.context.orgId,
         inputText: input.slice(0, 5000), // Truncate for storage
-        threatLevel: result.threat_level as "LOW" | "MEDIUM" | "HIGH",
+        threatLevel: (result.threat_level === "CRITICAL" ? "HIGH" : result.threat_level) as "LOW" | "MEDIUM" | "HIGH",
         attackType: result.attack_type || "unknown",
         actionTaken: result.action as "BLOCK" | "FLAG" | "SANITIZE",
         detail: result.detail,
