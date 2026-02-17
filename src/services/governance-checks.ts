@@ -1,6 +1,13 @@
 // Governance check stubs -- each returns randomized but realistic scores.
 // These will be replaced with real model inference in Phase 2.
 
+import {
+  expandAbbreviations,
+  splitClinicalSentences,
+  chunkContext,
+  findRelevantChunk,
+} from "./clinical-preprocessing";
+
 export interface CheckResult {
   score: number;
   flags: string[];
@@ -34,6 +41,12 @@ interface NLIPredictResponse {
 
 // Call DeBERTa NLI model via the semantic entropy service's /predict endpoint.
 // Falls back to word-overlap heuristic if the service is unavailable.
+//
+// Clinical-aware improvements:
+// 1. Expands abbreviations (BID -> twice daily) for better NLI
+// 2. Uses clinical sentence splitting (doesn't break on "T 39.1.")
+// 3. Chunks context to fit DeBERTa's 512-token limit
+// 4. Selects most relevant chunk per claim for focused entailment
 export async function entailment_check(
   output: string,
   perRequestContext: string,
@@ -62,14 +75,21 @@ export async function entailment_check(
     ? "per-request context + knowledge base"
     : knowledgeBaseContext ? "knowledge base" : "per-request context";
 
+  // --- Clinical preprocessing ---
+  // Expand abbreviations in both source and output for better NLI
+  const expandedContext = expandAbbreviations(combinedContext);
+  const expandedOutput = expandAbbreviations(output);
+
+  // Chunk context for DeBERTa's 512-token limit
+  // 380 tokens for premise leaves ~130 for hypothesis
+  const contextChunks = chunkContext(expandedContext, 380, 50);
+
   // --- If entailment service is available, use real DeBERTa NLI ---
   if (ENTAILMENT_URL) {
     try {
-      // Split output into sentences for per-claim entailment
-      const sentences = output
-        .split(/(?<=[.!?])\s+/)
-        .map(s => s.trim())
-        .filter(s => s.length > 10);
+      // Clinical-aware sentence splitting (doesn't break on "T 39.1.")
+      const sentences = splitClinicalSentences(expandedOutput)
+        .filter(s => s.length > 15); // Skip very short fragments
 
       if (sentences.length === 0) {
         return {
@@ -82,13 +102,17 @@ export async function entailment_check(
       let totalEntailment = 0;
       let contradictions = 0;
       const contradictedClaims: string[] = [];
+      const lowEntailmentClaims: string[] = [];
 
       for (const sentence of sentences) {
+        // Find the most relevant context chunk for this claim
+        const relevantChunk = findRelevantChunk(contextChunks, sentence);
+
         const resp = await fetch(ENTAILMENT_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            premise: combinedContext,
+            premise: relevantChunk,
             hypothesis: sentence,
           }),
         });
@@ -103,27 +127,41 @@ export async function entailment_check(
         if (data.label === "CONTRADICTION" && data.contradiction > 0.5) {
           contradictions++;
           contradictedClaims.push(sentence.slice(0, 80));
+        } else if (data.entailment < 0.3 && data.neutral > 0.5) {
+          // Low entailment + high neutral = claim has no basis in source
+          // This catches fabrication (invented content not in source)
+          lowEntailmentClaims.push(sentence.slice(0, 80));
         }
       }
 
       const avgEntailment = totalEntailment / sentences.length;
-      // Score: high entailment = good. Penalise contradictions heavily.
-      let score = avgEntailment - (contradictions / sentences.length) * 0.5;
+      // Score: high entailment = good.
+      // Penalise contradictions heavily (wrong facts).
+      // Penalise low entailment moderately (possibly fabricated).
+      let score = avgEntailment
+        - (contradictions / sentences.length) * 0.5
+        - (lowEntailmentClaims.length / sentences.length) * 0.15;
       score = Math.max(0, Math.min(1, score));
 
       const flags: string[] = [];
       if (contradictions > 0) flags.push("entailment_contradiction");
+      if (lowEntailmentClaims.length > 0) flags.push("possible_fabrication");
       if (score < 0.6) flags.push("low_entailment");
 
       const contradictionDetail = contradictedClaims.length > 0
         ? ` Contradicted: [${contradictedClaims.join("; ")}].`
         : "";
+      const fabricationDetail = lowEntailmentClaims.length > 0
+        ? ` Low-evidence claims: [${lowEntailmentClaims.join("; ")}].`
+        : "";
 
       return {
         score,
         flags,
-        detail: `NLI check (DeBERTa, ${contextSources}): ${sentences.length} claim(s), ` +
-          `avg entailment ${avgEntailment.toFixed(3)}, ${contradictions} contradiction(s).${contradictionDetail}`,
+        detail: `NLI check (DeBERTa, ${contextSources}, ${contextChunks.length} chunk(s)): ` +
+          `${sentences.length} claim(s), avg entailment ${avgEntailment.toFixed(3)}, ` +
+          `${contradictions} contradiction(s), ${lowEntailmentClaims.length} low-evidence.` +
+          `${contradictionDetail}${fabricationDetail}`,
       };
     } catch (err: any) {
       console.error("[entailment] Service call failed, falling back to heuristic:", err.message);
@@ -131,16 +169,32 @@ export async function entailment_check(
     }
   }
 
-  // --- Heuristic fallback (word overlap) ---
-  const outputWords = new Set(output.toLowerCase().split(/\s+/));
-  const contextWords = new Set(combinedContext.toLowerCase().split(/\s+/));
-  let overlap = 0;
-  for (const w of outputWords) {
-    if (contextWords.has(w) && w.length > 3) overlap++;
-  }
-  const overlapRatio = overlap / Math.max(outputWords.size, 1);
+  // --- Heuristic fallback (improved word overlap) ---
+  // Use expanded text for better matching
+  const outputTokens = expandedOutput.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+  const contextTokens = new Set(expandedContext.toLowerCase().split(/\s+/).filter(w => w.length > 3));
 
-  let score = Math.min(overlapRatio * 2.5, 1.0) + rand(-0.15, 0.15);
+  // Exclude common clinical filler words that inflate overlap scores
+  const fillerWords = new Set([
+    "patient", "noted", "showed", "found", "present", "history",
+    "admitted", "discharged", "treated", "started", "continued",
+    "stable", "improved", "clinical", "medical", "assessment",
+    "plan", "with", "that", "this", "from", "were", "been",
+    "have", "does", "will", "would", "about", "also", "into",
+  ]);
+
+  let overlap = 0;
+  let totalMeaningful = 0;
+  for (const w of outputTokens) {
+    if (fillerWords.has(w)) continue;
+    totalMeaningful++;
+    if (contextTokens.has(w)) overlap++;
+  }
+
+  const overlapRatio = totalMeaningful > 0 ? overlap / totalMeaningful : 0;
+
+  // More conservative scoring: require higher overlap for good scores
+  let score = Math.min(overlapRatio * 2.0, 1.0);
   score = Math.max(0, Math.min(1, score));
 
   const flags: string[] = [];
@@ -150,7 +204,7 @@ export async function entailment_check(
   return {
     score,
     flags,
-    detail: `NLI check (heuristic fallback, ${contextSources}): ${overlap} grounded terms across ${outputWords.size} output tokens. Score: ${score.toFixed(3)}.`,
+    detail: `NLI check (heuristic fallback, ${contextSources}): ${overlap} grounded terms across ${totalMeaningful} meaningful tokens. Score: ${score.toFixed(3)}.`,
   };
 }
 

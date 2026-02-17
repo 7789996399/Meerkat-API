@@ -187,6 +187,9 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
   if (allFlags.includes("ungrounded_numbers")) {
     recommendations.push("AI output contains numbers not present in source context. These may be fabricated.");
   }
+  if (allFlags.includes("possible_fabrication")) {
+    recommendations.push("Some claims have no supporting evidence in source context. Review for fabricated content.");
+  }
 
   // --- Generate audit ID ---
   const timestamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 8);
