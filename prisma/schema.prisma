@@ -36,6 +36,7 @@ enum ThreatLevel {
   LOW
   MEDIUM
   HIGH
+  CRITICAL
 }
 
 enum ThreatAction {
@@ -154,6 +155,7 @@ model VerificationSession {
   sessionId     String             @unique @map("session_id")
   orgId         String             @map("org_id")
   org           Organization       @relation(fields: [orgId], references: [id])
+  type          String             @default("verify")
   firstAudit    String             @map("first_audit")
   latestAudit   String             @map("latest_audit")
   attemptCount  Int                @default(1) @map("attempt_count")
@@ -164,20 +166,27 @@ model VerificationSession {
   resolvedAt    DateTime?          @map("resolved_at")
 
   verifications Verification[]
+  threatLogs    ThreatLog[]
 
   @@map("verification_sessions")
 }
 
 model ThreatLog {
-  id          String       @id @default(uuid())
-  orgId       String       @map("org_id")
-  org         Organization @relation(fields: [orgId], references: [id])
-  inputText   String       @map("input_text")
-  threatLevel ThreatLevel  @map("threat_level")
-  attackType  String       @map("attack_type")
-  actionTaken ThreatAction @map("action_taken")
-  detail      String
-  createdAt   DateTime     @default(now()) @map("created_at")
+  id             String       @id @default(uuid())
+  orgId          String       @map("org_id")
+  org            Organization @relation(fields: [orgId], references: [id])
+  auditId        String?      @unique @map("audit_id")
+  sessionId      String?      @map("session_id")
+  session        VerificationSession? @relation(fields: [sessionId], references: [sessionId])
+  inputText      String       @map("input_text")
+  threatLevel    ThreatLevel  @map("threat_level")
+  attackType     String       @map("attack_type")
+  actionTaken    ThreatAction @map("action_taken")
+  detail         String
+  sanitizedInput String?      @map("sanitized_input")
+  threats        Json?
+  remediation    Json?
+  createdAt      DateTime     @default(now()) @map("created_at")
 
   @@map("threat_log")
 }
