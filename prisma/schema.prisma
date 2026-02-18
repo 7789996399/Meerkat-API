@@ -74,12 +74,13 @@ model Organization {
   currentPeriodVerifications  Int       @default(0) @map("current_period_verifications")
   createdAt                   DateTime  @default(now()) @map("created_at")
 
-  apiKeys        ApiKey[]
-  configurations Configuration[]
-  verifications  Verification[]
-  threatLogs     ThreatLog[]
-  knowledgeBases KnowledgeBase[]
-  users          User[]
+  apiKeys               ApiKey[]
+  configurations        Configuration[]
+  verifications         Verification[]
+  verificationSessions  VerificationSession[]
+  threatLogs            ThreatLog[]
+  knowledgeBases        KnowledgeBase[]
+  users                 User[]
 
   @@map("organizations")
 }
@@ -111,6 +112,7 @@ model Configuration {
   knowledgeBaseEnabled  Boolean  @default(false) @map("knowledge_base_enabled")
   kbTopK                Int      @default(5) @map("kb_top_k")
   kbMinRelevance        Float    @default(0.75) @map("kb_min_relevance")
+  maxRetries            Int      @default(3) @map("max_retries")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
 
@@ -133,6 +135,11 @@ model Verification {
   checksResults       Json               @map("checks_results")
   flags               Json               @default("[]")
   humanReviewRequired Boolean            @default(false) @map("human_review_required")
+  sessionId           String?            @map("session_id")
+  attempt             Int                @default(1)
+  remediation         Json?
+  verificationMode    String?            @map("verification_mode")
+  session             VerificationSession? @relation(fields: [sessionId], references: [sessionId])
   reviewedBy          String?            @map("reviewed_by")
   reviewAction        ReviewAction?      @map("review_action")
   reviewNote          String?            @map("review_note")
@@ -140,6 +147,25 @@ model Verification {
   createdAt           DateTime           @default(now()) @map("created_at")
 
   @@map("verifications")
+}
+
+model VerificationSession {
+  id            String             @id @default(uuid())
+  sessionId     String             @unique @map("session_id")
+  orgId         String             @map("org_id")
+  org           Organization       @relation(fields: [orgId], references: [id])
+  firstAudit    String             @map("first_audit")
+  latestAudit   String             @map("latest_audit")
+  attemptCount  Int                @default(1) @map("attempt_count")
+  initialStatus VerificationStatus @map("initial_status")
+  finalStatus   VerificationStatus? @map("final_status")
+  resolved      Boolean            @default(false)
+  createdAt     DateTime           @default(now()) @map("created_at")
+  resolvedAt    DateTime?          @map("resolved_at")
+
+  verifications Verification[]
+
+  @@map("verification_sessions")
 }
 
 model ThreatLog {

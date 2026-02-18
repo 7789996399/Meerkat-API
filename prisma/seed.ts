@@ -12,6 +12,7 @@ async function main() {
   // Clean existing data
   await prisma.threatLog.deleteMany();
   await prisma.verification.deleteMany();
+  await prisma.verificationSession.deleteMany();
   await prisma.configuration.deleteMany();
   await prisma.apiKey.deleteMany();
   await prisma.organization.deleteMany();
@@ -154,6 +155,20 @@ async function main() {
       },
       flags: ["moderate_uncertainty", "unverified_claims"],
       humanReviewRequired: true,
+      sessionId: "ses_medication-reconciliation-demo",
+      attempt: 1,
+      verificationMode: "grounded",
+      remediation: {
+        message: "Verification FLAG. Found 2 issue(s): 1 source contradiction, 1 fabricated claim.",
+        agent_instruction: "Regenerate your response with the following corrections:\n- CONTRADICTION in claim_extraction: Your output \"Lisinopril 20mg daily\" contradicts the provider medication list showing 10mg. Correct value: \"Lisinopril 10mg QD per provider list; 20mg per pharmacy fill\".\n- UNVERIFIED CLAIM in claim_extraction: \"recent dosage change not yet reflected in the chart\" could not be verified against source material. Remove or verify this claim.",
+        corrections: [
+          { type: "source_contradiction", check: "claim_extraction", found: "Lisinopril 20mg daily", expected: "Provider list: 10mg QD; Pharmacy: 20mg", severity: "high" },
+          { type: "fabricated_claim", check: "claim_extraction", found: "recent dosage change not yet reflected in the chart", severity: "medium" },
+        ],
+        retry_allowed: true,
+        max_retries: 3,
+        suggested_action: "PROCEED_WITH_WARNING",
+      },
     },
     {
       agentName: "risk-assessment-agent",
@@ -207,6 +222,21 @@ async function main() {
         claim_extraction: { score: 0.0, flags: ["unverified_claims"], detail: "4 claims extracted. 0 verified, 1 unverified, 3 contradicted." },
       },
       flags: ["entailment_contradiction", "unverified_claims"],
+      sessionId: "ses_ckd-diagnosis-demo",
+      attempt: 1,
+      verificationMode: "grounded",
+      remediation: {
+        message: "Verification BLOCK. Found 3 issue(s): 2 source contradictions, 1 fabricated claim.",
+        agent_instruction: "Regenerate your response with the following corrections:\n- CONTRADICTION in claim_extraction: Your output \"eGFR of 42 mL/min\" contradicts the source. Correct value: \"eGFR 58 mL/min\".\n- CONTRADICTION in claim_extraction: Your output \"creatinine of 2.8 mg/dL\" contradicts the source. Correct value: \"Creatinine 1.8 mg/dL\".\n- UNVERIFIED CLAIM in claim_extraction: \"Recommend nephrology referral and ACE inhibitor therapy initiation\" could not be verified against source material. Remove or verify this claim.",
+        corrections: [
+          { type: "source_contradiction", check: "claim_extraction", found: "eGFR of 42 mL/min", expected: "eGFR 58 mL/min", severity: "critical", source_reference: "Lab results (2026-02-01)" },
+          { type: "source_contradiction", check: "claim_extraction", found: "creatinine of 2.8 mg/dL", expected: "Creatinine 1.8 mg/dL", severity: "critical", source_reference: "Lab results (2026-02-01)" },
+          { type: "fabricated_claim", check: "claim_extraction", found: "Recommend nephrology referral and ACE inhibitor therapy initiation", severity: "high" },
+        ],
+        retry_allowed: true,
+        max_retries: 3,
+        suggested_action: "RETRY_WITH_CORRECTION",
+      },
     },
     {
       agentName: "portfolio-analysis-agent",
@@ -224,6 +254,23 @@ async function main() {
         claim_extraction: { score: 0.0, flags: ["unverified_claims"], detail: "5 claims extracted. 0 verified, 0 unverified, 5 contradicted." },
       },
       flags: ["entailment_contradiction", "mild_preference", "unverified_claims"],
+      sessionId: "ses_sec-filing-demo",
+      attempt: 1,
+      verificationMode: "grounded",
+      remediation: {
+        message: "Verification BLOCK. Found 5 issue(s): 4 numerical distortions, 1 source contradiction.",
+        agent_instruction: "Regenerate your response with the following corrections:\n- NUMERICAL ERROR in claim_extraction: \"Revenue $847 million\" does not match source. Expected: \"$782.3 million\". Correct the figure.\n- NUMERICAL ERROR in claim_extraction: \"23% year-over-year growth\" does not match source. Expected: \"17.2%\". Correct the figure.\n- NUMERICAL ERROR in claim_extraction: \"Operating margin 18.5%\" does not match source. Expected: \"15.1%\". Correct the figure.\n- NUMERICAL ERROR in claim_extraction: \"Net income $156 million\" does not match source. Expected: \"$89.7 million\". Correct the figure.\n- CONTRADICTION in claim_extraction: Your output \"guidance to $3.8 billion\" contradicts the source. Correct value: \"$3.2-3.4 billion\".",
+        corrections: [
+          { type: "numerical_distortion", check: "claim_extraction", found: "Revenue $847 million", expected: "$782.3 million", severity: "critical", source_reference: "SEC Form 10-Q" },
+          { type: "numerical_distortion", check: "claim_extraction", found: "23% YoY growth", expected: "17.2%", severity: "critical", source_reference: "SEC Form 10-Q" },
+          { type: "numerical_distortion", check: "claim_extraction", found: "Operating margin 18.5%", expected: "15.1%", severity: "critical", source_reference: "SEC Form 10-Q" },
+          { type: "numerical_distortion", check: "claim_extraction", found: "Net income $156 million", expected: "$89.7 million", severity: "critical", source_reference: "SEC Form 10-Q" },
+          { type: "source_contradiction", check: "claim_extraction", found: "guidance to $3.8 billion", expected: "$3.2-3.4 billion", severity: "high", source_reference: "SEC Form 10-Q" },
+        ],
+        retry_allowed: true,
+        max_retries: 3,
+        suggested_action: "RETRY_WITH_CORRECTION",
+      },
     },
     {
       agentName: "legal-review-agent",
@@ -244,12 +291,38 @@ async function main() {
     },
   ];
 
+  // Create sessions first (verifications reference them)
+  const sessionIds = [...new Set(verifications.map((v: any) => v.sessionId).filter(Boolean))] as string[];
+  const auditIds: Record<number, string> = {};
   for (let i = 0; i < verifications.length; i++) {
-    const v = verifications[i];
+    auditIds[i] = makeAuditId(i);
+  }
+
+  for (const sid of sessionIds) {
+    const firstIdx = verifications.findIndex((v: any) => v.sessionId === sid);
+    const v = verifications[firstIdx] as any;
+    await prisma.verificationSession.create({
+      data: {
+        sessionId: sid,
+        orgId: org.id,
+        firstAudit: auditIds[firstIdx],
+        latestAudit: auditIds[firstIdx],
+        attemptCount: v.attempt || 1,
+        initialStatus: v.status,
+        finalStatus: null,
+        resolved: false,
+      },
+    });
+  }
+
+  console.log(`Created ${sessionIds.length} verification sessions`);
+
+  for (let i = 0; i < verifications.length; i++) {
+    const v = verifications[i] as any;
     await prisma.verification.create({
       data: {
         orgId: org.id,
-        auditId: makeAuditId(i),
+        auditId: auditIds[i],
         agentName: v.agentName,
         modelUsed: v.modelUsed,
         domain: v.domain,
@@ -261,6 +334,10 @@ async function main() {
         checksResults: v.checksResults,
         flags: v.flags,
         humanReviewRequired: "humanReviewRequired" in v ? v.humanReviewRequired : false,
+        sessionId: v.sessionId || null,
+        attempt: v.attempt || 1,
+        remediation: v.remediation || null,
+        verificationMode: v.verificationMode || "grounded",
       },
     });
   }

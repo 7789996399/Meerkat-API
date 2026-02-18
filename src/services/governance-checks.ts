@@ -7,11 +7,13 @@ import {
   chunkContext,
   findRelevantChunk,
 } from "./clinical-preprocessing";
+import { CorrectionDetail } from "../types/remediation";
 
 export interface CheckResult {
   score: number;
   flags: string[];
   detail: string;
+  corrections?: CorrectionDetail[];
 }
 
 export interface ClaimsResult {
@@ -21,6 +23,7 @@ export interface ClaimsResult {
   unverified: number;
   flags: string[];
   detail: string;
+  corrections?: CorrectionDetail[];
 }
 
 // Random float in [min, max], rounded to 3 decimal places
@@ -357,6 +360,16 @@ export async function implicit_preference_check(
       const dir = data.details.direction;
       const sent = data.details.sentiment;
 
+      const corrections: CorrectionDetail[] = [];
+      if (data.bias_detected || data.score < 0.75) {
+        corrections.push({
+          type: "bias_detected",
+          check: "implicit_preference",
+          found: `Bias direction: ${dir.direction} (${dir.party_a}=${dir.party_a_score}, ${dir.party_b}=${dir.party_b_score}). Keywords: [${dir.keywords_found.join(", ")}]`,
+          severity: data.bias_detected ? "high" : "medium",
+        });
+      }
+
       return {
         score: data.score,
         flags,
@@ -365,6 +378,7 @@ export async function implicit_preference_check(
           `direction=${dir.direction} (${dir.party_a}=${dir.party_a_score}, ${dir.party_b}=${dir.party_b_score}), ` +
           `keywords=[${dir.keywords_found.join(", ")}], ` +
           `bias_detected=${data.bias_detected}.`,
+        corrections: corrections.length > 0 ? corrections : undefined,
       };
     } catch (err: any) {
       console.error("[implicit_preference] Service call failed, falling back to heuristic:", err.message);
@@ -458,6 +472,34 @@ export async function claim_extraction_check(output: string, context: string): P
         ? ` Hallucinated entities: [${data.hallucinated_entities.join(", ")}].`
         : "";
 
+      const corrections: CorrectionDetail[] = [];
+      for (const claim of data.claims) {
+        if (claim.status === "contradicted") {
+          corrections.push({
+            type: "source_contradiction",
+            check: "claim_extraction",
+            found: claim.text,
+            expected: claim.source_sentence,
+            severity: "high",
+          });
+        } else if (claim.status === "unverified") {
+          corrections.push({
+            type: "fabricated_claim",
+            check: "claim_extraction",
+            found: claim.text,
+            severity: "medium",
+          });
+        }
+      }
+      for (const entity of data.hallucinated_entities) {
+        corrections.push({
+          type: "fabricated_claim",
+          check: "claim_extraction",
+          found: `Hallucinated entity: ${entity}`,
+          severity: "high",
+        });
+      }
+
       return {
         score,
         claims: data.total_claims,
@@ -467,6 +509,7 @@ export async function claim_extraction_check(output: string, context: string): P
         detail: `Claim extraction (spaCy + entailment): ${data.total_claims} claim(s), ` +
           `${data.verified} verified, ${data.contradicted} contradicted, ` +
           `${data.unverified} unverified.${hallucinatedSummary}`,
+        corrections: corrections.length > 0 ? corrections : undefined,
       };
     } catch (err: any) {
       console.error("[claim_extraction] Service call failed, falling back to heuristic:", err.message);

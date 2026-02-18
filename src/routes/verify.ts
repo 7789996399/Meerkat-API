@@ -11,6 +11,8 @@ import {
 } from "../services/governance-checks";
 import { searchKnowledgeBase, ChunkMatch } from "../services/semantic-search";
 import { checkVerificationLimit, incrementVerificationCount } from "../services/billing";
+import { buildRemediation } from "../services/remediation";
+import { Remediation } from "../types/remediation";
 import prisma from "../lib/prisma";
 
 const router = Router();
@@ -26,7 +28,7 @@ const WEIGHTS: Record<string, number> = {
 };
 
 router.post("/", async (req: AuthenticatedRequest, res) => {
-  const { input, output, context, checks, domain, config_id, agent_name, model } = req.body;
+  const { input, output, context, checks, domain, config_id, agent_name, model, session_id } = req.body;
 
   // --- Validate ---
   if (!input || typeof input !== "string") {
@@ -70,6 +72,7 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
   const kbEnabled = config?.knowledgeBaseEnabled ?? false;
   const kbTopK = config?.kbTopK ?? 5;
   const kbMinRelevance = config?.kbMinRelevance ?? 0.75;
+  const maxRetries = config?.maxRetries ?? 3;
 
   // --- Knowledge base retrieval ---
   let knowledgeBaseUsed = false;
@@ -88,6 +91,58 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
         kbContext = kbMatches.map((m) => m.content).join("\n\n");
       }
     }
+  }
+
+  // --- Determine verification mode ---
+  let verificationMode: string;
+  if (context && context.trim().length > 0) {
+    verificationMode = "grounded";
+  } else if (knowledgeBaseUsed) {
+    verificationMode = "knowledge_base";
+  } else {
+    verificationMode = "self_consistency";
+  }
+
+  // --- Session resolution ---
+  let sessionId: string;
+  let attempt: number;
+  let linkedAttempts: string[] | undefined;
+
+  if (session_id && typeof session_id === "string") {
+    const existingSession = await prisma.verificationSession.findUnique({
+      where: { sessionId: session_id },
+    });
+
+    if (!existingSession) {
+      res.status(404).json({ error: `Session not found: ${session_id}` });
+      return;
+    }
+    if (existingSession.orgId !== orgId) {
+      res.status(403).json({ error: "Access denied to this session" });
+      return;
+    }
+    if (existingSession.resolved) {
+      res.status(409).json({ error: "Session is already resolved" });
+      return;
+    }
+    if (existingSession.attemptCount >= maxRetries) {
+      res.status(409).json({ error: `Maximum retries (${maxRetries}) reached for this session` });
+      return;
+    }
+
+    sessionId = session_id;
+    attempt = existingSession.attemptCount + 1;
+
+    // Fetch linked audit IDs
+    const linkedVerifications = await prisma.verification.findMany({
+      where: { sessionId },
+      select: { auditId: true },
+      orderBy: { createdAt: "asc" },
+    });
+    linkedAttempts = linkedVerifications.map((v) => v.auditId);
+  } else {
+    sessionId = `ses_${crypto.randomUUID()}`;
+    attempt = 1;
   }
 
   // Merge requested checks with required checks (required always run)
@@ -120,6 +175,7 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
           score: claims.score,
           flags: claims.flags,
           detail: claims.detail,
+          corrections: claims.corrections,
         };
         break;
       }
@@ -191,12 +247,31 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
     recommendations.push("Some claims have no supporting evidence in source context. Review for fabricated content.");
   }
 
+  // --- Build remediation for non-PASS ---
+  let remediation: Remediation | undefined;
+  if (status !== "PASS") {
+    remediation = buildRemediation({
+      status,
+      checksResults,
+      allFlags,
+      attempt,
+      maxRetries,
+    });
+
+    // Prepend self-consistency warning if no source context
+    if (verificationMode === "self_consistency") {
+      remediation.message =
+        "Limited verification: no source context provided. Connect a knowledge base for full grounded verification. " +
+        remediation.message;
+    }
+  }
+
   // --- Generate audit ID ---
   const timestamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 8);
   const hash = crypto.randomBytes(4).toString("hex");
   const auditId = `aud_${timestamp}_${hash}`;
 
-  // --- Persist ---
+  // --- Persist verification ---
   await prisma.verification.create({
     data: {
       orgId,
@@ -212,18 +287,64 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
       checksResults: checksResults as any,
       flags: allFlags as any,
       humanReviewRequired,
+      sessionId,
+      attempt,
+      remediation: remediation ? (remediation as any) : null,
+      verificationMode,
     },
   });
+
+  // --- Upsert session ---
+  if (attempt === 1) {
+    await prisma.verificationSession.create({
+      data: {
+        sessionId,
+        orgId,
+        firstAudit: auditId,
+        latestAudit: auditId,
+        attemptCount: 1,
+        initialStatus: status,
+        resolved: status === "PASS",
+        resolvedAt: status === "PASS" ? new Date() : null,
+        finalStatus: status === "PASS" ? status : null,
+      },
+    });
+  } else {
+    const isResolved = status === "PASS" || attempt >= maxRetries;
+    await prisma.verificationSession.update({
+      where: { sessionId },
+      data: {
+        latestAudit: auditId,
+        attemptCount: attempt,
+        resolved: isResolved,
+        resolvedAt: isResolved ? new Date() : null,
+        finalStatus: isResolved ? status : null,
+      },
+    });
+  }
 
   // --- Increment verification counter ---
   await incrementVerificationCount(orgId);
 
+  // --- Strip internal corrections from checks before response ---
+  const responseChecks: Record<string, { score: number; flags: string[]; detail: string }> = {};
+  for (const [key, result] of Object.entries(checksResults)) {
+    responseChecks[key] = {
+      score: result.score,
+      flags: result.flags,
+      detail: result.detail,
+    };
+  }
+
   // --- Response ---
-  res.json({
+  const response: any = {
     trust_score: trustScore,
     status,
-    checks: checksResults,
+    checks: responseChecks,
     audit_id: auditId,
+    attempt,
+    session_id: sessionId,
+    verification_mode: verificationMode,
     recommendations,
     knowledge_base_used: knowledgeBaseUsed,
     knowledge_base_matches: kbMatches.map((m) => ({
@@ -232,7 +353,17 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
       relevance_score: m.relevance_score,
       content_preview: m.content_preview,
     })),
-  });
+  };
+
+  if (remediation) {
+    response.remediation = remediation;
+  }
+
+  if (linkedAttempts && linkedAttempts.length > 0) {
+    response.linked_attempts = linkedAttempts;
+  }
+
+  res.json(response);
 });
 
 export default router;
