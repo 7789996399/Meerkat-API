@@ -96,7 +96,7 @@ def _compute_deviation(source_val: float, ai_val: float) -> float:
     if source_val == 0 and ai_val == 0:
         return 0.0
     if source_val == 0:
-        return float("inf")
+        return 999.0  # Cap instead of inf to stay JSON-serializable
     return abs(ai_val - source_val) / abs(source_val)
 
 
