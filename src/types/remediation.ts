@@ -19,6 +19,9 @@ export interface CorrectionDetail {
   expected?: string;
   severity: Severity;
   source_reference?: string;
+  subtype?: "error" | "discrepancy";
+  requires_clinical_review?: boolean;
+  rationale?: string;
 }
 
 export interface Remediation {

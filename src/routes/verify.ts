@@ -256,6 +256,7 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
       allFlags,
       attempt,
       maxRetries,
+      domain: resolvedDomain,
     });
 
     // Prepend self-consistency warning if no source context

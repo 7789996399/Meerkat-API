@@ -20,6 +20,16 @@ interface BuildRemediationInput {
   allFlags: string[];
   attempt: number;
   maxRetries: number;
+  domain?: string;
+}
+
+const MEDICATION_KEYWORDS = /\b(mg|mcg|µg|ug|ml|units?|iu|meq|dose|medication)\b/i;
+
+function isMedicationCorrection(c: CorrectionDetail): boolean {
+  if (c.requires_clinical_review) return true;
+  return MEDICATION_KEYWORDS.test(
+    [c.found, c.expected, c.source_reference].filter(Boolean).join(" ")
+  );
 }
 
 export function buildRemediation({
@@ -28,6 +38,7 @@ export function buildRemediation({
   allFlags,
   attempt,
   maxRetries,
+  domain,
 }: BuildRemediationInput): Remediation {
   // 1. Collect corrections from all check results
   const corrections: CorrectionDetail[] = [];
@@ -67,6 +78,19 @@ export function buildRemediation({
       highestSeverity === "medium" || highestSeverity === "low"
         ? "PROCEED_WITH_WARNING"
         : "RETRY_WITH_CORRECTION";
+  }
+
+  // 3b. Healthcare domain override — prevent auto-correction of possible intentional dose changes
+  if (domain === "healthcare") {
+    const hasClinicalReview = corrections.some(c => c.requires_clinical_review === true);
+    const hasDiscrepancy = corrections.some(c => c.subtype === "discrepancy");
+    const hasMedicationClaim = corrections.some(
+      c => c.check === "claim_extraction" && isMedicationCorrection(c)
+    );
+
+    if (hasClinicalReview || hasDiscrepancy || hasMedicationClaim) {
+      suggestedAction = "REQUEST_HUMAN_REVIEW";
+    }
   }
 
   // 4. Build message — summarize counts by correction type
@@ -140,9 +164,16 @@ function buildAgentInstruction(
             );
             break;
           case "numerical_distortion":
-            directives.push(
-              `- NUMERICAL ERROR in ${c.check}: "${c.found}" does not match source.${c.expected ? ` Expected: "${c.expected}".` : ""} Correct the figure.`,
-            );
+            if (c.requires_clinical_review) {
+              directives.push(
+                `- DOSE DISCREPANCY in ${c.check}: "${c.found}" differs from source "${c.expected || "unknown"}". ` +
+                `This may be an intentional dose change. Verify with prescriber before correcting.`,
+              );
+            } else {
+              directives.push(
+                `- NUMERICAL ERROR in ${c.check}: "${c.found}" does not match source.${c.expected ? ` Expected: "${c.expected}".` : ""} Correct the figure.`,
+              );
+            }
             break;
           case "bias_detected":
             directives.push(
@@ -160,8 +191,23 @@ function buildAgentInstruction(
     }
     case "PROCEED_WITH_WARNING":
       return "Minor issues detected. You may proceed but consider addressing flagged items for improved accuracy.";
-    case "REQUEST_HUMAN_REVIEW":
+    case "REQUEST_HUMAN_REVIEW": {
+      // Provide specific dose discrepancy details for medication corrections
+      const medCorrections = corrections.filter(c => isMedicationCorrection(c));
+      if (medCorrections.length > 0) {
+        const details: string[] = [
+          "MEDICATION DOSE DISCREPANCY — Do not auto-correct. This may be an intentional prescriber change.",
+        ];
+        for (const c of medCorrections) {
+          details.push(
+            `- ${c.found}${c.expected ? ` (source: ${c.expected})` : ""}: ${c.rationale || "Verify with prescriber."}`,
+          );
+        }
+        details.push("Route to prescriber or clinical pharmacist for verification before proceeding.");
+        return details.join("\n");
+      }
       return "This response requires human review before it can be used. Do not proceed autonomously.";
+    }
     case "ABORT_ACTION":
       return "Verification failed with no actionable corrections available. Do not use this response.";
   }

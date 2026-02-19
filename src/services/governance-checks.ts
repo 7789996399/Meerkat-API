@@ -588,12 +588,15 @@ const NUMERICAL_SERVICE_URL = process.env.NUMERICAL_SERVICE_URL || "";
 interface NumericalMatchDetail {
   source_value: number;
   ai_value: number;
+  source_raw: string;
+  ai_raw: string;
   context: string;
   context_type: string;
   match: boolean;
   deviation: number;
   tolerance: number;
   severity: string;
+  detail: string;
 }
 
 interface NumericalVerifyResponse {
@@ -638,12 +641,67 @@ export async function numerical_verify_check(
       if (data.status === "warning") flags.push("numerical_warning");
       if (data.ungrounded_numbers.length > 0) flags.push("ungrounded_numbers");
 
+      // Generate corrections from mismatched pairs
+      const corrections: CorrectionDetail[] = [];
+      for (const m of data.matches) {
+        if (!m.match) {
+          const correction: CorrectionDetail = {
+            type: "numerical_distortion",
+            check: "numerical_verify",
+            found: m.ai_raw || String(m.ai_value),
+            expected: m.source_raw || String(m.source_value),
+            severity: m.severity === "critical" ? "critical" : m.severity === "high" ? "high" : "medium",
+            source_reference: m.context || m.detail,
+          };
+
+          if (domain === "healthcare" && m.context_type === "medication_dose") {
+            if (m.deviation >= 4.0) {
+              // 5x+ ratio — clearly hallucinated, safe to auto-correct
+              correction.subtype = "error";
+              correction.severity = "critical";
+              correction.requires_clinical_review = false;
+              correction.rationale = `Dose deviation ${m.deviation.toFixed(1)}x exceeds 5x threshold — likely hallucination`;
+            } else if (m.deviation >= 0.5) {
+              // 1.5x–5x ratio — could be intentional dose change
+              correction.subtype = "discrepancy";
+              correction.severity = "medium";
+              correction.requires_clinical_review = true;
+              correction.rationale = `Dose deviation ${m.deviation.toFixed(1)}x within clinical adjustment range — may be intentional`;
+            } else {
+              // <1.5x — minor discrepancy, still needs review
+              correction.subtype = "discrepancy";
+              correction.requires_clinical_review = true;
+              correction.rationale = `Minor dose discrepancy (${m.deviation.toFixed(2)}x) — verify with prescriber`;
+            }
+          } else {
+            // Non-healthcare or non-medication: treat as error
+            correction.subtype = "error";
+          }
+
+          corrections.push(correction);
+        }
+      }
+
+      // Generate corrections for ungrounded numbers
+      for (const u of data.ungrounded_numbers) {
+        corrections.push({
+          type: "numerical_distortion",
+          check: "numerical_verify",
+          found: u.raw || String(u.value),
+          severity: "high",
+          source_reference: u.context,
+          subtype: "error",
+          rationale: "Number not found in source context",
+        });
+      }
+
       return {
         score: data.score,
         flags,
         detail: `Numerical verification: ${data.detail} ` +
           `(${data.numbers_found_in_source} source, ${data.numbers_found_in_ai} AI, ` +
           `${data.critical_mismatches} critical, ${data.inference_time_ms.toFixed(0)}ms)`,
+        corrections: corrections.length > 0 ? corrections : undefined,
       };
     } catch (err: any) {
       console.error("[numerical_verify] Service call failed, falling back to heuristic:", err.message);
