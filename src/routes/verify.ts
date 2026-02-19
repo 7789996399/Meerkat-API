@@ -10,7 +10,7 @@ import {
   CheckResult,
 } from "../services/governance-checks";
 import { searchKnowledgeBase, ChunkMatch } from "../services/semantic-search";
-import { checkVerificationLimit, incrementVerificationCount } from "../services/billing";
+import { checkVerificationLimit, incrementVerificationCount, getUsageHeaders } from "../services/billing";
 import { buildRemediation } from "../services/remediation";
 import { Remediation } from "../types/remediation";
 import prisma from "../lib/prisma";
@@ -46,6 +46,12 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
   // --- Check verification limit (Starter plan) ---
   const org = await prisma.organization.findUnique({ where: { id: orgId } });
   if (org) {
+    // Set usage headers on every response (including 429)
+    const usageHeaders = getUsageHeaders(org.plan, org.currentPeriodVerifications);
+    for (const [key, value] of Object.entries(usageHeaders)) {
+      res.setHeader(key, value);
+    }
+
     const limitError = checkVerificationLimit(org.plan, org.currentPeriodVerifications);
     if (limitError) {
       res.status(429).json(limitError);

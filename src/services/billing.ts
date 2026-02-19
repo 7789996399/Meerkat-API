@@ -247,23 +247,82 @@ export async function getUsage(orgId: string) {
   };
 }
 
+export { STARTER_MONTHLY_LIMIT };
+
+/**
+ * Get the verification limit for a plan. Returns null for unlimited plans.
+ */
+export function getPlanLimit(plan: string): number | null {
+  if (plan === "starter") return STARTER_MONTHLY_LIMIT;
+  return null;
+}
+
+/**
+ * Compute the next monthly reset date (first of next month, UTC).
+ */
+function getNextResetDate(): string {
+  const now = new Date();
+  const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  return next.toISOString();
+}
+
 /**
  * Check if an organization has reached its verification limit.
- * Returns null if OK, or an error object if limit reached.
+ * Returns null if OK, or a rich error object for the 429 response body.
  */
 export function checkVerificationLimit(
   plan: string,
   currentCount: number
-): { error: string; upgrade_url: string } | null {
+): {
+  error: string;
+  plan: string;
+  limit: number;
+  used: number;
+  resets_at: string;
+  upgrade_url: string;
+} | null {
   if (plan !== "starter") return null;
   if (currentCount >= STARTER_MONTHLY_LIMIT) {
     return {
-      error:
-        "Verification limit reached. Upgrade to Professional for unlimited.",
-      upgrade_url: "/billing/upgrade",
+      error: "Monthly verification limit reached",
+      plan,
+      limit: STARTER_MONTHLY_LIMIT,
+      used: currentCount,
+      resets_at: getNextResetDate(),
+      upgrade_url: "https://meerkatplatform.com/#pricing",
     };
   }
   return null;
+}
+
+/**
+ * Build usage headers for API responses.
+ * Returns a record of header name → value to set on the response.
+ */
+export function getUsageHeaders(
+  plan: string,
+  currentCount: number
+): Record<string, string> {
+  const limit = getPlanLimit(plan);
+  const headers: Record<string, string> = {};
+
+  headers["X-Meerkat-Usage"] = String(currentCount);
+
+  if (limit !== null) {
+    const remaining = Math.max(0, limit - currentCount);
+    headers["X-Meerkat-Limit"] = String(limit);
+    headers["X-Meerkat-Remaining"] = String(remaining);
+
+    if (currentCount >= limit * 0.8) {
+      const pct = Math.round((currentCount / limit) * 100);
+      headers["X-Meerkat-Warning"] = `Approaching monthly limit (${pct}%)`;
+    }
+  } else {
+    headers["X-Meerkat-Limit"] = "unlimited";
+    headers["X-Meerkat-Remaining"] = "unlimited";
+  }
+
+  return headers;
 }
 
 /**
