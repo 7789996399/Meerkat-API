@@ -21,6 +21,7 @@ class ExtractResponse(BaseModel):
     verified: int
     contradicted: int
     unverified: int
+    ungrounded: int
     claims: list[ClaimDetail]
     hallucinated_entities: list[str]
     flags: list[str]

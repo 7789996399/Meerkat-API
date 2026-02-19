@@ -48,10 +48,13 @@ async def extract(req: ExtractRequest):
     verified = sum(1 for c in claims if c["status"] == "verified")
     contradicted = sum(1 for c in claims if c["status"] == "contradicted")
     unverified = sum(1 for c in claims if c["status"] == "unverified")
+    ungrounded = sum(1 for c in claims if c["status"] == "ungrounded")
 
     flags: list[str] = []
     if contradicted > 0:
         flags.append("contradicted_claims")
+    if ungrounded > 0:
+        flags.append("ungrounded_claims")
     if unverified > len(claims) * 0.5 and len(claims) > 0:
         flags.append("majority_unverified")
     if len(all_hallucinated) > 0:
@@ -79,6 +82,7 @@ async def extract(req: ExtractRequest):
         verified=verified,
         contradicted=contradicted,
         unverified=unverified,
+        ungrounded=ungrounded,
         claims=claim_details,
         hallucinated_entities=all_hallucinated,
         flags=flags,
