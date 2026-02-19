@@ -93,9 +93,14 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
     }
   }
 
-  // --- Determine verification mode ---
+  // --- Determine context availability and mode ---
+  const hasContext = !!(context && typeof context === "string" && context.trim().length > 0);
+  const contextMode: "verification" | "observation" = hasContext || knowledgeBaseUsed
+    ? "verification"
+    : "observation";
+
   let verificationMode: string;
-  if (context && context.trim().length > 0) {
+  if (hasContext) {
     verificationMode = "grounded";
   } else if (knowledgeBaseUsed) {
     verificationMode = "knowledge_base";
@@ -157,11 +162,15 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
   for (const check of checksToRun) {
     switch (check) {
       case "entailment":
-        checksResults.entailment = await entailment_check(
-          output,
-          context || "",
-          knowledgeBaseUsed ? kbContext : undefined,
-        );
+        if (contextMode === "observation") {
+          checksResults.entailment = { score: 1.0, flags: [], detail: "Skipped: no source context (observation mode)." };
+        } else {
+          checksResults.entailment = await entailment_check(
+            output,
+            context || "",
+            knowledgeBaseUsed ? kbContext : undefined,
+          );
+        }
         break;
       case "semantic_entropy":
         checksResults.semantic_entropy = await semantic_entropy_check(input, output);
@@ -169,22 +178,29 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
       case "implicit_preference":
         checksResults.implicit_preference = await implicit_preference_check(output, resolvedDomain, context);
         break;
-      case "claim_extraction": {
-        const claims = await claim_extraction_check(output, context || "");
-        checksResults.claim_extraction = {
-          score: claims.score,
-          flags: claims.flags,
-          detail: claims.detail,
-          corrections: claims.corrections,
-        };
+      case "claim_extraction":
+        if (contextMode === "observation") {
+          checksResults.claim_extraction = { score: 1.0, flags: [], detail: "Skipped: no source context (observation mode)." };
+        } else {
+          const claims = await claim_extraction_check(output, context || "");
+          checksResults.claim_extraction = {
+            score: claims.score,
+            flags: claims.flags,
+            detail: claims.detail,
+            corrections: claims.corrections,
+          };
+        }
         break;
-      }
       case "numerical_verify":
-        checksResults.numerical_verify = await numerical_verify_check(
-          output,
-          context || "",
-          resolvedDomain,
-        );
+        if (contextMode === "observation") {
+          checksResults.numerical_verify = { score: 1.0, flags: [], detail: "Skipped: no source context (observation mode)." };
+        } else {
+          checksResults.numerical_verify = await numerical_verify_check(
+            output,
+            context || "",
+            resolvedDomain,
+          );
+        }
         break;
     }
   }
@@ -341,6 +357,7 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
   const response: any = {
     trust_score: trustScore,
     status,
+    context_mode: contextMode,
     checks: responseChecks,
     audit_id: auditId,
     attempt,
