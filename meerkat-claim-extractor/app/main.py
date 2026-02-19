@@ -2,8 +2,8 @@
 meerkat-claim-extractor: Extracts and verifies factual claims from AI outputs.
 
 Three-step pipeline:
-1. Claim extraction (spaCy en_core_web_trf)
-2. Claim verification (bidirectional DeBERTa-large-MNLI entailment)
+1. Claim extraction (spaCy en_core_web_sm)
+2. Claim verification (bidirectional DeBERTa-base-MNLI entailment)
 3. Entity cross-reference (hallucination detection)
 """
 
@@ -20,7 +20,7 @@ app = FastAPI(title="meerkat-claim-extractor", version="0.1.0")
 
 @app.on_event("startup")
 async def startup():
-    """Pre-load DeBERTa-large-MNLI so first request isn't slow."""
+    """Pre-load DeBERTa-base-MNLI so first request isn't slow."""
     load_nli_model()
 
 

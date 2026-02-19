@@ -1,5 +1,5 @@
 """
-Claim extraction using spaCy en_core_web_trf.
+Claim extraction using spaCy en_core_web_sm.
 
 Identifies verifiable factual claims based on:
 - Named entities (PERSON, ORG, DATE, MONEY, PERCENT, CARDINAL, etc.)
@@ -199,7 +199,7 @@ HEDGE_PATTERNS = [
 def _get_nlp():
     global _nlp
     if _nlp is None:
-        _nlp = spacy.load("en_core_web_trf")
+        _nlp = spacy.load("en_core_web_sm")
     return _nlp
 
 

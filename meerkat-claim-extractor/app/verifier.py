@@ -1,5 +1,5 @@
 """
-Claim verification via local bidirectional DeBERTa-large-MNLI entailment.
+Claim verification via local bidirectional DeBERTa-base-MNLI entailment.
 
 For each claim, runs BIDIRECTIONAL entailment against each source sentence:
   - Forward:  premise=source_sentence, hypothesis=claim
@@ -29,13 +29,13 @@ def load_model():
     """Pre-load the NLI model. Call at startup to avoid cold-start latency."""
     global _nli_pipeline
     if _nli_pipeline is None:
-        logger.info("Loading microsoft/deberta-large-mnli for claim verification ...")
+        logger.info("Loading microsoft/deberta-base-mnli for claim verification ...")
         _nli_pipeline = pipeline(
             "text-classification",
-            model="microsoft/deberta-large-mnli",
+            model="microsoft/deberta-base-mnli",
             device=-1,  # CPU
         )
-        logger.info("DeBERTa-large-MNLI loaded")
+        logger.info("DeBERTa-base-MNLI loaded")
     return _nli_pipeline
 
 

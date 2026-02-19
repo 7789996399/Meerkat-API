@@ -9,12 +9,12 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements.txt
 
-RUN python -m spacy download en_core_web_trf
+RUN python -m spacy download en_core_web_sm
 
 COPY app/ app/
 
-# Pre-download DeBERTa-large-MNLI at build time so startup is fast
-RUN python -c "from transformers import pipeline; pipeline('text-classification', model='microsoft/deberta-large-mnli')"
+# Pre-download DeBERTa-base-MNLI at build time so startup is fast
+RUN python -c "from transformers import pipeline; pipeline('text-classification', model='microsoft/deberta-base-mnli')"
 
 EXPOSE 8002
 
