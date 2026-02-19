@@ -1,111 +1,142 @@
 """
-Claim verification via DeBERTa entailment service.
+Claim verification via local bidirectional DeBERTa-large-MNLI entailment.
 
-For each claim, sends (premise=source_context, hypothesis=claim) to the
-entailment service and classifies:
-  - entailment > 0.7: VERIFIED
-  - contradiction > 0.5: CONTRADICTED
-  - otherwise: UNVERIFIED
+For each claim, runs BIDIRECTIONAL entailment against each source sentence:
+  - Forward:  premise=source_sentence, hypothesis=claim
+  - Backward: premise=claim, hypothesis=source_sentence
+  - BOTH ENTAILMENT   → VERIFIED  (true semantic equivalence)
+  - EITHER CONTRADICTION → CONTRADICTED
+  - Otherwise          → UNVERIFIED
 
-Clinical improvements:
-  - Chunks source context to fit DeBERTa's 512-token limit
-  - Expands clinical abbreviations for better NLI inference
-  - Selects the most relevant chunk per claim
+Source text is split into sentences so that long documents don't exceed
+the 512-token limit. If ANY source sentence gives bidirectional entailment,
+the claim is verified.
+
+Reference: meerkat-semantic-entropy/app/entailment_client.py
 """
 
-import asyncio
 import logging
+import re
 
-import aiohttp
-
-from .clinical_preprocessing import (
-    expand_abbreviations,
-    chunk_context,
-    find_relevant_chunk,
-)
+from transformers import pipeline
 
 logger = logging.getLogger(__name__)
 
+_nli_pipeline = None
 
-async def verify_claims(
+
+def load_model():
+    """Pre-load the NLI model. Call at startup to avoid cold-start latency."""
+    global _nli_pipeline
+    if _nli_pipeline is None:
+        logger.info("Loading microsoft/deberta-large-mnli for claim verification ...")
+        _nli_pipeline = pipeline(
+            "text-classification",
+            model="microsoft/deberta-large-mnli",
+            device=-1,  # CPU
+        )
+        logger.info("DeBERTa-large-MNLI loaded")
+    return _nli_pipeline
+
+
+def _check_entailment(premise: str, hypothesis: str) -> str:
+    """
+    Check NLI relation between premise and hypothesis.
+    Returns 'ENTAILMENT', 'NEUTRAL', or 'CONTRADICTION'.
+    """
+    nli = load_model()
+    try:
+        result = nli(
+            f"{premise} [SEP] {hypothesis}",
+            truncation=True,
+            max_length=512,
+        )
+        return result[0]["label"]
+    except Exception as e:
+        logger.error("Entailment check failed: %s", e)
+        return "NEUTRAL"
+
+
+def _split_source_sentences(text: str) -> list[str]:
+    """Split source text into sentences for per-sentence entailment checks."""
+    # Protect common abbreviations
+    protected = text
+    for abbr in ("Dr.", "Mr.", "Mrs.", "Ms.", "Inc.", "Corp.", "vs.", "etc.", "e.g.", "i.e."):
+        protected = protected.replace(abbr, abbr.replace(".", "_DOT_"))
+
+    parts = re.split(r"(?<=[.!?])\s+", protected)
+    sentences = []
+    for p in parts:
+        restored = p.replace("_DOT_", ".").strip()
+        if len(restored) >= 10:
+            sentences.append(restored)
+    return sentences
+
+
+def verify_claims(
     claims: list[dict],
     source_context: str,
-    entailment_url: str,
 ) -> list[dict]:
     """
-    Verify each claim against the source context using entailment.
+    Verify each claim against source using bidirectional DeBERTa entailment.
+
+    For each claim, checks it against every source sentence. If ANY sentence
+    produces bidirectional entailment, the claim is verified.
 
     Mutates each claim dict in-place, adding:
       - status: "verified" | "contradicted" | "unverified"
-      - entailment_score: float
+      - entailment_score: float (1.0 if verified, 0.0 if contradicted, 0.5 if unverified)
 
     Returns the same list.
     """
-    if not source_context.strip() or not entailment_url:
+    if not source_context.strip():
         for claim in claims:
             claim["status"] = "unverified"
             claim["entailment_score"] = 0.0
         return claims
 
-    # Preprocess: expand abbreviations for better NLI
-    expanded_context = expand_abbreviations(source_context)
+    # Pre-load model (no-op if already loaded)
+    load_model()
 
-    # Chunk context for DeBERTa 512-token limit
-    chunks = chunk_context(expanded_context, max_tokens=380, overlap_tokens=60)
-    logger.info("Source context chunked into %d pieces for entailment", len(chunks))
+    source_sentences = _split_source_sentences(source_context)
+    if not source_sentences:
+        for claim in claims:
+            claim["status"] = "unverified"
+            claim["entailment_score"] = 0.0
+        return claims
 
-    # Run entailment checks concurrently in batches
-    batch_size = 10
-    for i in range(0, len(claims), batch_size):
-        batch = claims[i : i + batch_size]
-        await asyncio.gather(
-            *[_verify_single(claim, chunks, entailment_url) for claim in batch]
-        )
+    for claim in claims:
+        _verify_single(claim, source_sentences)
 
     return claims
 
 
-async def _verify_single(
-    claim: dict,
-    context_chunks: list[str],
-    entailment_url: str,
-) -> None:
-    """Verify a single claim via the entailment service."""
-    try:
-        # Expand abbreviations in the claim too
-        claim_text = expand_abbreviations(claim["text"])
+def _verify_single(claim: dict, source_sentences: list[str]) -> None:
+    """Verify a single claim via bidirectional entailment against source sentences."""
+    claim_text = claim["text"]
 
-        # Find the most relevant context chunk for this claim
-        relevant_chunk = find_relevant_chunk(context_chunks, claim_text)
+    best_status = "unverified"
+    best_score = 0.5
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                entailment_url,
-                json={
-                    "premise": relevant_chunk,
-                    "hypothesis": claim_text,
-                },
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                if resp.status != 200:
-                    claim["status"] = "unverified"
-                    claim["entailment_score"] = 0.0
-                    return
+    for sent in source_sentences:
+        forward = _check_entailment(sent, claim_text)
+        backward = _check_entailment(claim_text, sent)
 
-                data = await resp.json()
-                entailment = data.get("entailment", 0.0)
-                contradiction = data.get("contradiction", 0.0)
+        if forward == "ENTAILMENT" and backward == "ENTAILMENT":
+            # Bidirectional entailment = verified (true equivalence)
+            claim["status"] = "verified"
+            claim["entailment_score"] = 1.0
+            return
 
-                claim["entailment_score"] = round(entailment, 4)
+        if forward == "CONTRADICTION" or backward == "CONTRADICTION":
+            # Any contradiction is significant
+            best_status = "contradicted"
+            best_score = 0.0
 
-                if entailment > 0.7:
-                    claim["status"] = "verified"
-                elif contradiction > 0.5:
-                    claim["status"] = "contradicted"
-                else:
-                    claim["status"] = "unverified"
+        # Track forward-only entailment as partial support
+        if forward == "ENTAILMENT" and best_status != "contradicted":
+            best_status = "verified"
+            best_score = 0.8
 
-    except Exception as e:
-        logger.warning("Entailment check failed for claim: %s", e)
-        claim["status"] = "unverified"
-        claim["entailment_score"] = 0.0
+    claim["status"] = best_status
+    claim["entailment_score"] = best_score

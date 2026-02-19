@@ -3,17 +3,25 @@ meerkat-claim-extractor: Extracts and verifies factual claims from AI outputs.
 
 Three-step pipeline:
 1. Claim extraction (spaCy en_core_web_trf)
-2. Claim verification (DeBERTa entailment service)
+2. Claim verification (bidirectional DeBERTa-large-MNLI entailment)
 3. Entity cross-reference (hallucination detection)
 """
+
+import asyncio
 
 from fastapi import FastAPI
 from app.models import ExtractRequest, ExtractResponse, ClaimDetail
 from app.extractor import extract_claims
-from app.verifier import verify_claims
+from app.verifier import verify_claims, load_model as load_nli_model
 from app.entities import find_hallucinated_entities
 
 app = FastAPI(title="meerkat-claim-extractor", version="0.1.0")
+
+
+@app.on_event("startup")
+async def startup():
+    """Pre-load DeBERTa-large-MNLI so first request isn't slow."""
+    load_nli_model()
 
 
 @app.post("/extract", response_model=ExtractResponse)
@@ -21,8 +29,9 @@ async def extract(req: ExtractRequest):
     # Step 1: Extract claims from AI output
     claims = extract_claims(req.ai_output)
 
-    # Step 2: Verify claims against source context via entailment
-    claims = await verify_claims(claims, req.source, req.entailment_url)
+    # Step 2: Verify claims against source via bidirectional DeBERTa entailment
+    # CPU-bound inference -- offload to thread pool
+    claims = await asyncio.to_thread(verify_claims, claims, req.source)
 
     # Step 3: Entity cross-reference for hallucination detection
     all_hallucinated = find_hallucinated_entities(req.ai_output, req.source)

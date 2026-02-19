@@ -4,7 +4,6 @@ from pydantic import BaseModel
 class ExtractRequest(BaseModel):
     ai_output: str
     source: str = ""
-    entailment_url: str = ""
 
 
 class ClaimDetail(BaseModel):
