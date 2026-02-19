@@ -69,23 +69,7 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
     };
     const threatLevel = threatLevelMap[result.threat_level] || "HIGH";
 
-    await prisma.threatLog.create({
-      data: {
-        orgId,
-        auditId,
-        sessionId,
-        inputText: input.slice(0, 5000),
-        threatLevel,
-        attackType: primaryType,
-        actionTaken,
-        detail: result.remediation?.message || "Threat detected.",
-        sanitizedInput: result.sanitized_input?.slice(0, 5000) || null,
-        threats: result.threats as any,
-        remediation: result.remediation as any,
-      },
-    });
-
-    // --- Upsert session ---
+    // --- Upsert session (must exist before threat log due to FK) ---
     const existingSession = await prisma.verificationSession.findUnique({
       where: { sessionId },
     });
@@ -122,6 +106,22 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
         },
       });
     }
+
+    await prisma.threatLog.create({
+      data: {
+        orgId,
+        auditId,
+        sessionId,
+        inputText: input.slice(0, 5000),
+        threatLevel,
+        attackType: primaryType,
+        actionTaken,
+        detail: result.remediation?.message || "Threat detected.",
+        sanitizedInput: result.sanitized_input?.slice(0, 5000) || null,
+        threats: result.threats as any,
+        remediation: result.remediation as any,
+      },
+    });
   }
 
   // --- Response ---

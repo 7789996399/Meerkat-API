@@ -32,6 +32,7 @@ CREATE TYPE "DocumentStatus" AS ENUM ('uploaded', 'chunking', 'indexed', 'error'
 CREATE TABLE "organizations" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "email" TEXT,
     "plan" "Plan" NOT NULL,
     "domain" "Domain" NOT NULL,
     "stripe_customer_id" TEXT,
@@ -194,6 +195,9 @@ CREATE UNIQUE INDEX "organizations_stripe_customer_id_key" ON "organizations"("s
 
 -- CreateIndex
 CREATE UNIQUE INDEX "organizations_stripe_subscription_id_key" ON "organizations"("stripe_subscription_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "organizations_email_key" ON "organizations"("email");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "verifications_audit_id_key" ON "verifications"("audit_id");

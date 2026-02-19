@@ -271,30 +271,7 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
   const hash = crypto.randomBytes(4).toString("hex");
   const auditId = `aud_${timestamp}_${hash}`;
 
-  // --- Persist verification ---
-  await prisma.verification.create({
-    data: {
-      orgId,
-      auditId,
-      agentName: agent_name || null,
-      modelUsed: model || null,
-      domain: resolvedDomain,
-      userInput: input,
-      aiOutput: output,
-      sourceContext: context || null,
-      trustScore,
-      status,
-      checksResults: checksResults as any,
-      flags: allFlags as any,
-      humanReviewRequired,
-      sessionId,
-      attempt,
-      remediation: remediation ? (remediation as any) : null,
-      verificationMode,
-    },
-  });
-
-  // --- Upsert session ---
+  // --- Upsert session (must exist before verification due to FK) ---
   if (attempt === 1) {
     await prisma.verificationSession.create({
       data: {
@@ -322,6 +299,29 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
       },
     });
   }
+
+  // --- Persist verification ---
+  await prisma.verification.create({
+    data: {
+      orgId,
+      auditId,
+      agentName: agent_name || null,
+      modelUsed: model || null,
+      domain: resolvedDomain,
+      userInput: input,
+      aiOutput: output,
+      sourceContext: context || null,
+      trustScore,
+      status,
+      checksResults: checksResults as any,
+      flags: allFlags as any,
+      humanReviewRequired,
+      sessionId,
+      attempt,
+      remediation: remediation ? (remediation as any) : null,
+      verificationMode,
+    },
+  });
 
   // --- Increment verification counter ---
   await incrementVerificationCount(orgId);
