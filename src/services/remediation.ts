@@ -26,6 +26,12 @@ interface BuildRemediationInput {
 const MEDICATION_KEYWORDS = /\b(mg|mcg|µg|ug|ml|units?|iu|meq|dose|medication)\b/i;
 
 function isMedicationCorrection(c: CorrectionDetail): boolean {
+  // Only numerical and claim-level corrections can trigger medication override.
+  // Bias/preference corrections often contain incidental unit strings ("mEq", "mg")
+  // in their text and must NOT trigger the healthcare medication pathway.
+  if (c.type !== "numerical_distortion" && c.type !== "source_contradiction" && c.type !== "fabricated_claim") {
+    return false;
+  }
   if (c.requires_clinical_review) return true;
   return MEDICATION_KEYWORDS.test(
     [c.found, c.expected, c.source_reference].filter(Boolean).join(" ")
