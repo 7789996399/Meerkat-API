@@ -35,8 +35,11 @@ htmlcov/
 
 # Logs
 *.log
--e 
+
 # Production secrets
 .env.prod
 .env.local
 .env.production
+# Benchmark artifacts
+meerkat_phase1_*.csv
+phase1_*_benchmark.py
