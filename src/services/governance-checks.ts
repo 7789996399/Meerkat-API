@@ -434,18 +434,12 @@ export async function claim_extraction_check(output: string, context: string): P
   // --- If service URL is configured, call the claim extractor service ---
   if (CLAIM_EXTRACTOR_URL) {
     try {
-      // Entailment service (/predict) lives on the entropy service
-      const entailmentUrl = process.env.ENTROPY_SERVICE_URL
-        ? `${process.env.ENTROPY_SERVICE_URL}/predict`
-        : "http://localhost:8001/predict";
-
       const resp = await fetch(`${CLAIM_EXTRACTOR_URL}/extract`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ai_output: output,
-          source_context: context || "",
-          entailment_url: entailmentUrl,
+          source: context || "",
         }),
       });
 
