@@ -7,6 +7,7 @@ import routes from "./routes";
 import mcpRouter from "./mcp/route";
 import billingWebhookRouter from "./routes/billing-webhook";
 import authRouter from "./routes/auth";
+import registerRouter from "./routes/register";
 
 dotenv.config();
 
@@ -29,6 +30,9 @@ app.use("/auth", authRouter);
 
 // MCP server (SSE transport) -- handles its own auth
 app.use("/mcp", mcpRouter);
+
+// Self-service registration (unauthenticated -- this IS the key creation endpoint)
+app.use("/v1/register", registerRouter);
 
 // All /v1 routes: authenticate first, then rate-limit per plan, then route
 app.use("/v1", authenticate, rateLimiter, routes);

@@ -67,6 +67,7 @@ enum DocumentStatus {
 model Organization {
   id                          String    @id @default(uuid())
   name                        String
+  email                       String?   @unique
   plan                        Plan
   domain                      Domain
   stripeCustomerId            String?   @unique @map("stripe_customer_id")
