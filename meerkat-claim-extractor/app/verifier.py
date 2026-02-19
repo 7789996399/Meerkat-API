@@ -31,13 +31,14 @@ logger = logging.getLogger(__name__)
 _nli_pipeline = None
 
 # Minimum keyword overlap score to consider a claim "grounded" in a source line
-_OVERLAP_THRESHOLD = 0.15
+_OVERLAP_THRESHOLD = 0.25
 
 # Max source lines to run through DeBERTa per claim (top N by overlap)
 _MAX_NLI_SENTENCES = 3
 
 # Stop words excluded from keyword overlap scoring
 _STOP_WORDS = frozenset({
+    # General English
     "the", "a", "an", "is", "was", "were", "are", "been",
     "be", "have", "has", "had", "do", "does", "did",
     "will", "would", "could", "should", "may", "might",
@@ -47,6 +48,15 @@ _STOP_WORDS = frozenset({
     "it", "its", "not", "no", "nor", "so", "if", "then",
     "than", "too", "very", "just", "about", "also", "only",
     "patient", "pt", "he", "she", "his", "her", "they", "their",
+    # Clinical structural words (common to all medication/lab/dx statements)
+    "takes", "taking", "take", "given", "received", "started",
+    "mg", "mcg", "meq", "ml", "units", "puffs",
+    "po", "oral", "iv", "subq", "inh", "topical",
+    "daily", "twice", "weekly", "monthly", "every", "hours", "prn",
+    "morning", "evening", "bedtime", "noon",
+    "ref", "normal", "range", "level", "levels",
+    "history", "diagnosis", "diagnosed", "allergic", "allergy",
+    "admission", "discharge", "hospital", "admitted",
 })
 
 
@@ -165,12 +175,58 @@ def _find_best_matches(
     return scored
 
 
+def _extract_entity_name(entity: str) -> str | None:
+    """
+    Extract the meaningful name from a raw spaCy entity string.
+
+    Strips trailing units/numbers so that "Metoprolol 200mg" → "Metoprolol",
+    "6.8 mEq/L." → None (pure measurement, not a name),
+    "Potassium is 4.2" → "Potassium".
+    """
+    # Remove trailing punctuation
+    clean = entity.strip().rstrip(".")
+
+    # Extract leading alphabetic name (the meaningful identifier)
+    m = re.match(r"([A-Za-z][A-Za-z\-]{2,})", clean)
+    if not m:
+        return None
+
+    name = m.group(1)
+
+    # Skip generic words that aren't entity names
+    if name.lower() in _STOP_WORDS:
+        return None
+
+    return name
+
+
 def _claim_entities_in_source(claim_entities: list[str], full_source: str) -> bool:
-    """Check whether ANY claim entity appears somewhere in the full source text."""
+    """
+    Check whether ANY claim entity's NAME appears in the full source text.
+
+    Uses exact word-boundary matching on the extracted entity name.
+    "Metoprolol 200mg" matches source containing "Metoprolol 50mg" (name exists).
+    "Rituximab 375mg" does NOT match source lacking "Rituximab".
+    Pure measurements like "6.8 mEq/L" are skipped (not informative names).
+    """
     source_lower = full_source.lower()
+    found_any_name = False
+
     for ent in claim_entities:
-        if ent.lower() in source_lower:
+        name = _extract_entity_name(ent)
+        if name is None:
+            continue
+        found_any_name = True
+        # Exact word-boundary match (case-insensitive)
+        pattern = r"\b" + re.escape(name.lower()) + r"\b"
+        if re.search(pattern, source_lower):
             return True
+
+    # If we found named entities but none matched, that's a miss
+    if found_any_name:
+        return False
+
+    # No named entities to check — can't confirm grounding via entities
     return False
 
 
@@ -230,16 +286,11 @@ def _verify_single(
 
     best_score = ranked[0][1] if ranked else 0.0
 
-    # Step 2: Ungrounded check
+    # Step 2: Ungrounded check — claim is ungrounded if BOTH conditions hold:
+    #   a) Best keyword overlap with any source line is below threshold
+    #   b) No exact entity name match found in the full source text
     if best_score < _OVERLAP_THRESHOLD:
-        # Low keyword overlap. Check if key entities exist anywhere in source.
-        if claim_entities and not _claim_entities_in_source(claim_entities, full_source):
-            claim["status"] = "ungrounded"
-            claim["entailment_score"] = 0.0
-            return
-
-        # No entities to check and no overlap at all — ungrounded
-        if best_score == 0.0:
+        if not _claim_entities_in_source(claim_entities, full_source):
             claim["status"] = "ungrounded"
             claim["entailment_score"] = 0.0
             return
