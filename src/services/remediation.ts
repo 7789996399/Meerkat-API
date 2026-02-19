@@ -26,13 +26,14 @@ interface BuildRemediationInput {
 const MEDICATION_KEYWORDS = /\b(mg|mcg|µg|ug|ml|units?|iu|meq|dose|medication)\b/i;
 
 function isMedicationCorrection(c: CorrectionDetail): boolean {
-  // Only numerical and claim-level corrections can trigger medication override.
-  // Bias/preference corrections often contain incidental unit strings ("mEq", "mg")
-  // in their text and must NOT trigger the healthcare medication pathway.
-  if (c.type !== "numerical_distortion" && c.type !== "source_contradiction" && c.type !== "fabricated_claim") {
-    return false;
-  }
+  // requires_clinical_review is only set by numerical_verify for dose mismatches —
+  // always trust it regardless of correction type.
   if (c.requires_clinical_review) return true;
+  // Keyword matching only applies to numerical_distortion corrections.
+  // Clinical notes are saturated with unit strings ("mEq", "mg", "mL") so
+  // matching keywords in claim_extraction or other check text produces
+  // false positives on lab values, vitals, and other non-medication numbers.
+  if (c.type !== "numerical_distortion") return false;
   return MEDICATION_KEYWORDS.test(
     [c.found, c.expected, c.source_reference].filter(Boolean).join(" ")
   );

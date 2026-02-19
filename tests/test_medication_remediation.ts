@@ -101,13 +101,14 @@ assert(result2.suggested_action === "RETRY_WITH_CORRECTION", "10x dose error →
 assert(result2.agent_instruction.includes("NUMERICAL ERROR"), "agent instruction contains NUMERICAL ERROR directive");
 
 // ══════════════════════════════════════════════════════════════
-// Test 3: Drug name swap with "mg" in text → REQUEST_HUMAN_REVIEW
-// claim_extraction found a contradicted claim mentioning medication.
-// Even without explicit requires_clinical_review, the medication
-// keyword detection should trigger human review.
+// Test 3: Drug name swap (claim_extraction only) → RETRY_WITH_CORRECTION
+// claim_extraction found a contradicted claim that happens to contain "mg".
+// Keyword matching is restricted to numerical_distortion corrections to
+// avoid false positives from clinical text saturated with unit strings.
+// Without requires_clinical_review, this should NOT trigger the override.
 // ══════════════════════════════════════════════════════════════
 
-console.log("\n=== Test 3: Drug name swap (claim_extraction + mg) → REQUEST_HUMAN_REVIEW ===");
+console.log("\n=== Test 3: Drug name swap (claim_extraction + mg, no numerical) → RETRY_WITH_CORRECTION ===");
 
 const drugSwapCorrection: CorrectionDetail = {
   type: "source_contradiction",
@@ -133,7 +134,50 @@ const result3 = buildRemediation({
   domain: "healthcare",
 });
 
-assert(result3.suggested_action === "REQUEST_HUMAN_REVIEW", "drug name swap with mg → REQUEST_HUMAN_REVIEW");
+assert(result3.suggested_action === "RETRY_WITH_CORRECTION", "drug swap from claim_extraction only → RETRY_WITH_CORRECTION (no medication override)");
+
+// ══════════════════════════════════════════════════════════════
+// Test 3b: Drug name swap caught by BOTH claim_extraction and
+// numerical_verify (with requires_clinical_review) → REQUEST_HUMAN_REVIEW
+// When numerical_verify flags the dose as a discrepancy, the override fires.
+// ══════════════════════════════════════════════════════════════
+
+console.log("\n=== Test 3b: Drug swap with numerical discrepancy → REQUEST_HUMAN_REVIEW ===");
+
+const drugSwapNumerical: CorrectionDetail = {
+  type: "numerical_distortion",
+  check: "numerical_verify",
+  found: "10 mg",
+  expected: "50 mg",
+  severity: "medium",
+  subtype: "discrepancy",
+  requires_clinical_review: true,
+  rationale: "Dose deviation 1.6x within clinical adjustment range — may be intentional",
+};
+
+const result3b = buildRemediation({
+  status: "BLOCK",
+  checksResults: {
+    claim_extraction: {
+      score: 0.4,
+      flags: ["unverified_claims"],
+      detail: "test",
+      corrections: [drugSwapCorrection],
+    },
+    numerical_verify: {
+      score: 0.5,
+      flags: ["numerical_distortion"],
+      detail: "test",
+      corrections: [drugSwapNumerical],
+    },
+  },
+  allFlags: ["unverified_claims", "numerical_distortion"],
+  attempt: 1,
+  maxRetries: 3,
+  domain: "healthcare",
+});
+
+assert(result3b.suggested_action === "REQUEST_HUMAN_REVIEW", "drug swap with numerical discrepancy → REQUEST_HUMAN_REVIEW");
 
 // ══════════════════════════════════════════════════════════════
 // Test 4: Non-healthcare domain with same discrepancy → RETRY_WITH_CORRECTION
