@@ -414,7 +414,7 @@ interface ClaimExtractorClaim {
   claim_id: number;
   text: string;
   source_sentence: string;
-  status: "verified" | "contradicted" | "unverified";
+  status: "verified" | "contradicted" | "unverified" | "ungrounded";
   entailment_score: number;
   entities: string[];
   hallucinated_entities: string[];
@@ -425,6 +425,7 @@ interface ClaimExtractorResponse {
   verified: number;
   contradicted: number;
   unverified: number;
+  ungrounded: number;
   claims: ClaimExtractorClaim[];
   hallucinated_entities: string[];
   flags: string[];
@@ -449,10 +450,14 @@ export async function claim_extraction_check(output: string, context: string): P
 
       const data = (await resp.json()) as ClaimExtractorResponse;
 
-      // Score: verified / total (1.0 if no claims)
-      const score = data.total_claims > 0
+      // Score: start from verified ratio, then apply flat penalties for bad claims.
+      // Each contradicted claim: -0.15, each ungrounded claim: -0.25, floor at 0.
+      let score = data.total_claims > 0
         ? data.verified / data.total_claims
         : 1.0;
+      score -= data.contradicted * 0.15;
+      score -= (data.ungrounded ?? 0) * 0.25;
+      score = Math.max(0, score);
 
       const flags: string[] = [...data.flags];
       if (data.unverified > 0 && !flags.includes("unverified_claims")) {
@@ -475,6 +480,13 @@ export async function claim_extraction_check(output: string, context: string): P
             found: claim.text,
             expected: claim.source_sentence,
             severity: "high",
+          });
+        } else if (claim.status === "ungrounded") {
+          corrections.push({
+            type: "fabricated_claim",
+            check: "claim_extraction",
+            found: claim.text,
+            severity: "critical",
           });
         } else if (claim.status === "unverified") {
           corrections.push({
@@ -502,7 +514,7 @@ export async function claim_extraction_check(output: string, context: string): P
         flags,
         detail: `Claim extraction (spaCy + entailment): ${data.total_claims} claim(s), ` +
           `${data.verified} verified, ${data.contradicted} contradicted, ` +
-          `${data.unverified} unverified.${hallucinatedSummary}`,
+          `${data.ungrounded ?? 0} ungrounded, ${data.unverified} unverified.${hallucinatedSummary}`,
         corrections: corrections.length > 0 ? corrections : undefined,
       };
     } catch (err: any) {

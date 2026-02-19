@@ -209,6 +209,17 @@ def match_and_compare(
         passing = sum(1 for m in matches if m.match)
         score = passing / len(matches)
 
+        # Critical drug dose penalty: a single medication dose mismatch
+        # with ratio >= 2x should NOT get averaged into 0.97 across 40
+        # numbers.  Cap the score at 0.5 so the gateway flags it.
+        if domain == "healthcare":
+            for m in matches:
+                if (not m.match
+                        and m.ai.context_type == "medication_dose"
+                        and m.deviation >= 1.0):   # deviation >= 1.0 ⟹ ratio >= 2×
+                    score = min(score, 0.5)
+                    break
+
     # Determine status
     if critical_count > 0:
         status = "fail"
