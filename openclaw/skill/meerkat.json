@@ -2,7 +2,7 @@
   "$schema": "https://meerkat.ai/schemas/openclaw-skill-config.json",
   "version": "1.0.0",
   "api": {
-    "base_url": "https://api.meerkat.ai",
+    "base_url": "https://api.meerkatplatform.com",
     "timeout_ms": 5000,
     "retry_count": 2
   },

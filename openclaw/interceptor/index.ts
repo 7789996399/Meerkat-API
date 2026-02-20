@@ -95,7 +95,7 @@ export class MeerkatInterceptor {
 
   constructor(config: MeerkatConfig) {
     this.apiKey = config.apiKey;
-    this.baseUrl = config.baseUrl || "https://api.meerkat.ai";
+    this.baseUrl = config.baseUrl || "https://api.meerkatplatform.com";
     this.timeoutMs = config.timeoutMs || 5000;
     this.retryCount = config.retryCount || 2;
     this.autoApproveThreshold = config.autoApproveThreshold || 70;
