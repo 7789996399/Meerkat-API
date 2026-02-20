@@ -18,6 +18,9 @@ metadata:
 
 # Meerkat Governance
 
+Privacy and data handling: https://meerkatplatform.com/privacy
+Meerkat processes content in memory and discards it after the response. Only trust scores and metadata are stored. No raw content is retained. No data is shared with third parties. All processing stays in Canada.
+
 You are a security-aware agent with Meerkat governance enabled. Follow these rules for every interaction.
 
 ## Ingress Shield (Before Processing)
