@@ -26,6 +26,11 @@ app.get("/", (_req, res) => {
   res.sendFile(path.resolve(__dirname, "../meerkat-dev-landing.html"));
 });
 
+// Docs page
+app.get("/docs", (_req, res) => {
+  res.sendFile(path.resolve(__dirname, "../meerkat-docs.html"));
+});
+
 // Health check (unauthenticated, no rate limit)
 app.get("/v1/health", (_req, res) => {
   res.json({ status: "healthy", version: "1.0.0" });

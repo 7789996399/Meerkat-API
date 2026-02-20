@@ -16,7 +16,7 @@ RUN npx prisma generate
 # Copy source and build
 COPY tsconfig.json ./
 COPY src/ src/
-COPY meerkat-dev-landing.html ./
+COPY meerkat-dev-landing.html meerkat-docs.html ./
 
 RUN npm run build
 
