@@ -1,5 +1,6 @@
 import express from "express";
 import cookieParser from "cookie-parser";
+import path from "path";
 import dotenv from "dotenv";
 import { authenticate } from "./middleware/auth";
 import { rateLimiter } from "./middleware/rateLimit";
@@ -19,6 +20,11 @@ app.use("/v1/billing/webhook", express.raw({ type: "application/json" }), billin
 
 app.use(express.json());
 app.use(cookieParser());
+
+// Landing page
+app.get("/", (_req, res) => {
+  res.sendFile(path.resolve(__dirname, "../meerkat-dev-landing.html"));
+});
 
 // Health check (unauthenticated, no rate limit)
 app.get("/v1/health", (_req, res) => {
