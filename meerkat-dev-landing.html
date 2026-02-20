@@ -403,7 +403,7 @@
 
   <div style="text-align:center;margin-top:16px">
     <button id="demo-btn" onclick="runDemo()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:14px 48px;font-size:14px;font-weight:700;cursor:pointer;font-family:'JetBrains Mono',monospace;letter-spacing:0.04em;transition:all 0.2s">Verify Now</button>
-    <div style="color:#4b5563;font-size:11px;margin-top:8px">Calls the live production API at api.meerkatplatform.com</div>
+    <div style="color:#4b5563;font-size:11px;margin-top:8px">Calls the live production API</div>
   </div>
 
   <div id="demo-result" style="display:none;margin-top:24px">
@@ -714,7 +714,7 @@ async function runDemo() {
   btn.style.opacity = '0.6';
 
   try {
-    const res = await fetch('https://api.meerkatplatform.com/v1/verify', {
+    const res = await fetch('/v1/verify', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -839,7 +839,7 @@ async function registerKey() {
   btn.disabled = true;
 
   try {
-    const res = await fetch('https://api.meerkatplatform.com/v1/register', {
+    const res = await fetch('/v1/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email })
