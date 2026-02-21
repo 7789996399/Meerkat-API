@@ -904,4 +904,12 @@ async function registerKey() {
     }
   } catch (err) {
     result.style.display = 'block';
-    result.innerHTML = '<div style="color:#f
+    result.innerHTML = '<div style="color:#f85149;font-size:13px">Network error. Please try again.</div>';
+  }
+
+  btn.textContent = 'Get Key';
+  btn.disabled = false;
+}
+</script>
+</body>
+</html>
