@@ -1,4 +1,5 @@
 import express from "express";
+import cors from "cors";
 import cookieParser from "cookie-parser";
 import path from "path";
 import dotenv from "dotenv";
@@ -18,6 +19,10 @@ const port = process.env.PORT || 3000;
 // Stripe webhook needs raw body for signature verification -- mount BEFORE express.json()
 app.use("/v1/billing/webhook", express.raw({ type: "application/json" }), billingWebhookRouter);
 
+app.use(cors({
+  origin: ['https://meerkatplatform.com', 'https://www.meerkatplatform.com', 'http://localhost:3000'],
+  credentials: true,
+}));
 app.use(express.json());
 app.use(cookieParser());
 
