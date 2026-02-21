@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Meerkat -- Trust Infrastructure for AI Agents</title>
+<title>Meerkat - Trust Infrastructure for AI Agents</title>
 <meta name="description" content="Dual-gate middleware that shields incoming content and verifies outgoing AI actions. Sub-300ms. Free tier. Every action audited.">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -27,6 +27,7 @@
     backdrop-filter: blur(12px);
   }
   .nav-links { display: flex; gap: 32px; align-items: center; }
+  .nav-logo { flex-shrink: 0; }
   .btn-primary {
     background: #e5e7eb; color: #050505; border: none; border-radius: 6px;
     padding: 8px 20px; font-size: 13px; font-weight: 700; cursor: pointer;
@@ -229,14 +230,48 @@
 
   @media (max-width: 768px) {
     h1 { font-size: 32px; }
+    h2 { font-size: 24px; }
     .gate-cards { grid-template-columns: 1fr; }
     .pricing-cards { flex-direction: column; }
     .arch-flow { flex-direction: column; }
     .arch-arrow { transform: rotate(90deg); }
-    nav { padding: 12px 20px; }
     section { padding: 48px 20px; }
     .install-banner { flex-direction: column; text-align: center; }
     #demo [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+
+    /* NAV: logo on its own row, links scroll horizontally below */
+    nav {
+      padding: 12px 20px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .nav-links {
+      width: 100%;
+      gap: 16px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 2px;
+    }
+    .nav-links .btn-primary { display: none; }
+
+    .hero { padding-top: 60px; padding-bottom: 40px; }
+    .hero-sub { font-size: 15px; }
+    .hero-buttons { flex-direction: column; gap: 10px; }
+    .hero-buttons button { width: 100%; text-align: center; }
+
+    .terminal-body { padding: 16px; min-height: 200px; font-size: 11px; }
+    .terminal-title { font-size: 10px; }
+
+    .threats-table { overflow-x: auto; }
+    .threats-header, .threats-row { min-width: 480px; }
+
+    .stats { gap: 24px; padding: 40px 20px; }
+    .stat-value { font-size: 28px; }
+
+    .code-tabs { overflow-x: auto; }
+    .code-tab { padding: 8px 14px; font-size: 12px; white-space: nowrap; }
+
+    footer { flex-direction: column; gap: 16px; text-align: center; }
   }
 </style>
 </head>
@@ -244,6 +279,7 @@
 
 <!-- NAV -->
 <nav>
+  <div class="nav-logo">
   <svg width="120" height="18.8" viewBox="0 0 1444 227" fill="none">
     <g fill="#e5e7eb" fill-rule="evenodd">
       <path d="M 1 5 L 0 222 L 4 226 L 69 226 L 72 223 L 73 130 L 94 168 L 102 174 L 130 174 L 138 166 L 156 133 L 158 132 L 159 223 L 162 226 L 228 226 L 231 224 L 232 6 L 228 1 L 167 0 L 162 3 L 118 86 L 109 73 L 71 3 L 65 0 L 5 1 Z"/>
@@ -255,13 +291,14 @@
       <path d="M 1249 1 L 1244 7 L 1245 67 L 1250 71 L 1303 72 L 1305 74 L 1306 223 L 1310 226 L 1379 226 L 1383 221 L 1382 75 L 1387 71 L 1439 71 L 1443 67 L 1442 3 L 1437 0 Z"/>
     </g>
   </svg>
+  </div>
   <div class="nav-links">
     <a href="#architecture">Architecture</a>
     <a href="#threats">Threats</a>
     <a href="#demo">Demo</a>
     <a href="#integrate">Integrate</a>
     <a href="/docs">Docs</a>
-    <a href="mailto:support@meerkatplatform.com">Support</a>
+    <a href="/cdn-cgi/l/email-protection#691a1c1919061b1d29040c0c1b02081d1905081d0f061b04470a0604">Support</a>
     <button class="btn-primary" onclick="document.getElementById('register').scrollIntoView({behavior:'smooth'})">Get API Key</button>
   </div>
 </nav>
@@ -287,7 +324,7 @@
       <div class="terminal-dot r"></div>
       <div class="terminal-dot y"></div>
       <div class="terminal-dot g"></div>
-      <span class="terminal-title">meerkat verify -- catching a 10x medication dose error</span>
+      <span class="terminal-title">meerkat verify - catching a 10x medication dose error</span>
     </div>
     <div class="terminal-body" id="terminal"></div>
   </div>
@@ -374,7 +411,7 @@
   <div style="text-align:center;margin-bottom:48px">
     <div style="max-width:640px;margin:0 auto;padding:32px 0;border-top:1px solid #1a1a1a;border-bottom:1px solid #1a1a1a">
       <p style="color:#9ca3af;font-size:17px;font-style:italic;line-height:1.6;font-weight:400">"Pre-deployment evaluations aren't enough. Autonomy needs continuous monitoring in production."</p>
-      <p style="color:#4b5563;font-size:13px;margin-top:12px">-- Anthropic, "Measuring AI agent autonomy in practice", Feb 2026</p>
+      <p style="color:#4b5563;font-size:13px;margin-top:12px">- Anthropic, "Measuring AI agent autonomy in practice", Feb 2026</p>
     </div>
   </div>
 
@@ -403,7 +440,7 @@
 
   <div style="text-align:center;margin-top:16px">
     <button id="demo-btn" onclick="runDemo()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:14px 48px;font-size:14px;font-weight:700;cursor:pointer;font-family:'JetBrains Mono',monospace;letter-spacing:0.04em;transition:all 0.2s">Verify Now</button>
-    <div style="color:#4b5563;font-size:11px;margin-top:8px">Calls the live production API</div>
+    <div style="color:#4b5563;font-size:11px;margin-top:8px">Calls the live production API at api.meerkatplatform.com</div>
   </div>
 
   <div id="demo-result" style="display:none;margin-top:24px">
@@ -434,7 +471,7 @@
       <div class="terminal-dot r"></div>
       <div class="terminal-dot y"></div>
       <div class="terminal-dot g"></div>
-      <span class="terminal-title">flow guarantee -- agent self-corrects in &lt;1s</span>
+      <span class="terminal-title">flow guarantee - agent self-corrects in &lt;1s</span>
     </div>
     <div class="terminal-body" style="font-size:13px;line-height:1.7">
       <div style="white-space:pre-wrap" class="cmd">  Attempt 1: "Metoprolol 500mg daily"</div>
@@ -567,10 +604,10 @@ if (result.status === 'BLOCK') {
     </g>
   </svg>
   <div class="footer-text">Meerkat watches. Your agent works.</div>
-  <a href="mailto:support@meerkatplatform.com" style="color:#4b5563;font-size:12px">support@meerkatplatform.com</a>
+  <a href="/cdn-cgi/l/email-protection#a5d6d0d5d5cad7d1e5c8c0c0d7cec4d1d5c9c4d1c3cad7c88bc6cac8" style="color:#4b5563;font-size:12px"><span class="__cf_email__" data-cfemail="c8bbbdb8b8a7babc88a5adadbaa3a9bcb8a4a9bcaea7baa5e6aba7a5">[email&#160;protected]</span></a>
 </footer>
 
-<script>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
 // Terminal typing animation
 const lines = [
   { prefix: "$ ", text: 'curl -X POST https://api.meerkatplatform.com/v1/verify \\' },
@@ -714,7 +751,7 @@ async function runDemo() {
   btn.style.opacity = '0.6';
 
   try {
-    const res = await fetch('/v1/verify', {
+    const res = await fetch('https://api.meerkatplatform.com/v1/verify', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -752,7 +789,7 @@ async function runDemo() {
           const scoreColor = check.score >= 0.8 ? '#3fb950' : check.score >= 0.5 ? '#d29922' : '#f85149';
           let flags = '';
           if (check.flags && check.flags.length > 0) {
-            flags = check.flags.map(f => `<div style="color:#f85149;font-size:12px;margin-top:4px">-- ${f}</div>`).join('');
+            flags = check.flags.map(f => `<div style="color:#f85149;font-size:12px;margin-top:4px">- ${f}</div>`).join('');
           }
           checksHtml += `
             <div style="padding:14px 20px;border-bottom:1px solid #21262d">
@@ -808,7 +845,7 @@ async function runDemo() {
       ${checksHtml}
       ${remediationHtml}
       <div style="padding:14px 20px;text-align:center">
-        <button onclick="document.getElementById('register').scrollIntoView({behavior:'smooth'})" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:10px 28px;font-size:13px;font-weight:600;cursor:pointer;font-family:'JetBrains Mono',monospace">Get your own API key, free</button>
+        <button onclick="document.getElementById('register').scrollIntoView({behavior:'smooth'})" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:10px 28px;font-size:13px;font-weight:600;cursor:pointer;font-family:'JetBrains Mono',monospace">Get your own API key - free</button>
       </div>`;
   } catch (err) {
     result.style.display = 'block';
@@ -839,7 +876,7 @@ async function registerKey() {
   btn.disabled = true;
 
   try {
-    const res = await fetch('/v1/register', {
+    const res = await fetch('https://api.meerkatplatform.com/v1/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email })
@@ -856,7 +893,7 @@ async function registerKey() {
             <button onclick="navigator.clipboard.writeText(document.getElementById('api-key-display').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)"
               style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:6px 12px;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:12px;white-space:nowrap">Copy</button>
           </div>
-          <div style="color:#6b7280;font-size:12px;margin-top:12px">Save this key -- it won't be shown again. <a href="/docs" style="color:#7c3aed;font-size:12px">Read the docs</a></div>
+          <div style="color:#6b7280;font-size:12px;margin-top:12px">Save this key - it won't be shown again. <a href="/docs" style="color:#7c3aed;font-size:12px">Read the docs</a></div>
         </div>`;
     } else if (res.status === 409) {
       result.style.display = 'block';
@@ -867,17 +904,4 @@ async function registerKey() {
     }
   } catch (err) {
     result.style.display = 'block';
-    result.innerHTML = '<div style="color:#f85149;font-size:13px">Network error. Please try again.</div>';
-  }
-
-  btn.textContent = 'Get Key';
-  btn.disabled = false;
-}
-
-// Allow Enter key in email input
-document.getElementById('reg-email').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') registerKey();
-});
-</script>
-</body>
-</html>
+    result.innerHTML = '<div style="color:#f
